@@ -10,22 +10,26 @@ payload = {
     "client_id": api_key,
     "refresh_token": refresh_token
 }
-resp = requests.post(token_url, data=payload).json()
-access_token = resp['access_token']
+resp = requests.post(token_url, data=payload)
+resp.raise_for_status()  # This will expose the real error if authentication fails
+token_data = resp.json()
+access_token = token_data['access_token']
 
-# 2. Retrieve Shop ID (v3 Two-Step Process)
+# 2. Extract User ID directly from the token and get Shop ID
+# Etsy v3 access tokens are formatted as: {user_id}.{jwt_string}
+user_id = access_token.split('.')[0]
+
 headers = {'x-api-key': api_key, 'Authorization': f'Bearer {access_token}'}
 
-# First, get your user_id
-me = requests.get("https://api.etsy.com/v3/application/users/me", headers=headers).json()
-user_id = me['user_id']
-
-# Then, get your shop details using your user_id
-shop = requests.get(f"https://api.etsy.com/v3/application/users/{user_id}/shops", headers=headers).json()
-shop_id = shop['shop_id']
+# Get your shop details using your user_id
+shop_resp = requests.get(f"https://api.etsy.com/v3/application/users/{user_id}/shops", headers=headers)
+shop_resp.raise_for_status()
+shop_id = shop_resp.json()['shop_id']
 
 # 3. Pull latest receipts 
-receipts = requests.get(f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts", headers=headers).json()
+receipts_resp = requests.get(f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts", headers=headers)
+receipts_resp.raise_for_status()
+receipts = receipts_resp.json()
 
 # 4. Save data directly to the repository
 with open('data.json', 'w') as f:
