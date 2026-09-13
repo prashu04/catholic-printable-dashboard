@@ -41,7 +41,7 @@ historical_months = [
     { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# 4. Save combined payload to data.json
+# 4. Save combined payload containing BOTH historical baseline and live receipts to data.json
 payload_data = {
     "historical_months": historical_months,
     "results": live_receipts if isinstance(live_receipts, list) else []
