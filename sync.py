@@ -1,8 +1,9 @@
 import os, requests, json
 
-api_key = os.environ['ETSY_API_KEY']
-refresh_token = os.environ['ETSY_REFRESH_TOKEN']
-shop_id = os.environ['ETSY_SHOP_ID']
+# Strip prevents hidden whitespace errors from GitHub Secrets
+api_key = os.environ['ETSY_API_KEY'].strip()
+refresh_token = os.environ['ETSY_REFRESH_TOKEN'].strip()
+shop_id = str(os.environ['ETSY_SHOP_ID']).strip()
 
 # 1. Exchange refresh token for a live access token
 token_url = "https://api.etsy.com/v3/public/oauth/token"
