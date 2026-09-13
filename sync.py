@@ -13,10 +13,16 @@ payload = {
 resp = requests.post(token_url, data=payload).json()
 access_token = resp['access_token']
 
-# 2. Retrieve Shop ID
+# 2. Retrieve Shop ID (v3 Two-Step Process)
 headers = {'x-api-key': api_key, 'Authorization': f'Bearer {access_token}'}
+
+# First, get your user_id
 me = requests.get("https://api.etsy.com/v3/application/users/me", headers=headers).json()
-shop_id = me['shop_id']
+user_id = me['user_id']
+
+# Then, get your shop details using your user_id
+shop = requests.get(f"https://api.etsy.com/v3/application/users/{user_id}/shops", headers=headers).json()
+shop_id = shop['shop_id']
 
 # 3. Pull latest receipts 
 receipts = requests.get(f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts", headers=headers).json()
