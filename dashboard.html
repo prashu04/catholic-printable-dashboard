@@ -380,16 +380,82 @@
                     document.getElementById('status-indicator').innerText = '✅ LIVE';
                     document.getElementById('status-indicator').style.color = '#38a169';
                     
-                    // Route to parser (handles both `{ results: [] }` API wrappers and raw arrays)
-                    let apiResults = data.results || data;
-                    processAPIReceipts(apiResults);
+                    processPipelinePayload(data);
                 })
                 .catch(error => {
                     console.warn("Pipeline pending:", error);
                     document.getElementById('status-indicator').innerText = '⚠️ Awaiting Pipeline Data';
                     document.getElementById('status-indicator').style.color = '#e53e3e';
-                    document.getElementById('history-body').innerHTML = `<tr><td colspan="7" style="text-align: center; color: #e53e3e;">Pipeline Error: Cannot load data.json. Ensure the GitHub action ran successfully.</td></tr>`;
                 });
+        }
+
+        function processPipelinePayload(data) {
+            let monthlyData = {};
+
+            // 1. Load Pre-aggregated Historical Months (Oct 2025 - Aug 2026)
+            if (data.historical_months && Array.isArray(data.historical_months)) {
+                data.historical_months.forEach(m => {
+                    monthlyData[m.month] = { ...m };
+                });
+            }
+
+            // 2. Process Live API Receipts for current months
+            let results = data.results || [];
+            let itemStats = {};
+            let orderBaskets = {};
+            
+            heatmapData = Array(7).fill().map(() => Array(12).fill(0));
+            maxHeat = 0;
+            priceTiers = { low: 0, mid: 0, high: 0 };
+            buyerLedger = {};
+
+            results.forEach(receipt => {
+                let timestamp = receipt.created_timestamp || receipt.creation_tsz;
+                if (!timestamp) return;
+                
+                let d = new Date(timestamp * 1000);
+                let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { month: monthKey, orders: 0, sales: 0, fees: 0, adFees: 0, refunds: 0, profit: 0 };
+                }
+
+                let amount = 0;
+                if (receipt.grandtotal) {
+                    amount = receipt.grandtotal.amount / (receipt.grandtotal.divisor || 1);
+                }
+
+                let transPercent = parseFloat(document.getElementById('fee-trans').value) || 6.5;
+                let procPercent = parseFloat(document.getElementById('fee-proc').value) || 5;
+                let fixedProc = parseFloat(document.getElementById('fee-proc-fixed').value) || 25;
+                let listingFee = parseFloat(document.getElementById('fee-listing').value) || 18;
+                let regPercent = parseFloat(document.getElementById('fee-reg').value) || 0.29;
+                
+                let estimatedFees = (amount * (transPercent / 100)) + (amount * (procPercent / 100)) + fixedProc + (amount * (regPercent / 100)) + listingFee;
+
+                monthlyData[monthKey].orders += 1;
+                monthlyData[monthKey].sales += amount;
+                monthlyData[monthKey].fees -= estimatedFees;
+
+                let buyerName = receipt.name || receipt.buyer_email || "Etsy Buyer";
+                let cleanBuyer = String(buyerName).trim();
+                if (!buyerLedger[cleanBuyer]) buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
+                buyerLedger[cleanBuyer].orderIds.add(receipt.receipt_id);
+                buyerLedger[cleanBuyer].spend += amount;
+
+                let day = d.getDay();
+                let month = d.getMonth();
+                heatmapData[day][month] += 1;
+                if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
+            });
+
+            historicalData = Object.values(monthlyData).map(month => {
+                month.profit = month.sales + month.fees + month.adFees + month.refunds;
+                return month;
+            }).sort((a, b) => a.month.localeCompare(b.month));
+
+            refreshFinancialDashboard();
+            refreshAdvancedDashboard();
         }
 
         // Parse Etsy API JSON Structure
