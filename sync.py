@@ -26,17 +26,28 @@ receipts_resp = requests.get(url, headers=headers)
 receipts_resp.raise_for_status()
 live_receipts = receipts_resp.json().get('results', receipts_resp.json())
 
-# 3. Define Historical Baseline Receipts (Oct 2025 – Aug 2026)
-# These UNIX timestamps and receipt structures seed your established timeline.
-historical_baseline = [
-    # Example historical baseline entry mapping (or add your structured ledger receipts here)
+# 3. Verified Historical Baseline (Oct 2025 – Aug 2026)
+historical_months = [
+    { "month": "2025-10", "orders": 0, "sales": 0, "fees": -224, "adFees": 0, "refunds": 0, "profit": -224 },
+    { "month": "2025-11", "orders": 2, "sales": 64, "fees": -135, "adFees": 0, "refunds": 0, "profit": -71 },
+    { "month": "2025-12", "orders": 5, "sales": 288, "fees": -281, "adFees": 0, "refunds": 0, "profit": 7 },
+    { "month": "2026-01", "orders": 12, "sales": 1129, "fees": -713, "adFees": 0, "refunds": 0, "profit": 416 },
+    { "month": "2026-02", "orders": 12, "sales": 1389, "fees": -836, "adFees": 0, "refunds": 0, "profit": 553 },
+    { "month": "2026-03", "orders": 7, "sales": 2123, "fees": -759, "adFees": -434, "refunds": -360, "profit": 570 },
+    { "month": "2026-04", "orders": 11, "sales": 5187, "fees": -1428, "adFees": 0, "refunds": -500, "profit": 3259 },
+    { "month": "2026-05", "orders": 5, "sales": 1191, "fees": -462, "adFees": 0, "refunds": 0, "profit": 729 },
+    { "month": "2026-06", "orders": 15, "sales": 4096, "fees": -1418, "adFees": -36, "refunds": 0, "profit": 2642 },
+    { "month": "2026-07", "orders": 19, "sales": 4762, "fees": -1659, "adFees": -167, "refunds": -326, "profit": 2610 },
+    { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# Combine historical baseline with live API receipts
-combined_receipts = historical_baseline + (live_receipts if isinstance(live_receipts, list) else [])
+# 4. Save combined payload to data.json
+payload_data = {
+    "historical_months": historical_months,
+    "results": live_receipts if isinstance(live_receipts, list) else []
+}
 
-# 4. Save combined dataset to data.json
 with open('data.json', 'w') as f:
-    json.dump({"results": combined_receipts}, f)
+    json.dump(payload_data, f)
 
-print(f"Successfully synced {len(combined_receipts)} total records to data.json")
+print("Successfully synced historical baseline and live receipts to data.json")
