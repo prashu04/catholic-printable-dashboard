@@ -1,13 +1,11 @@
 import os, requests, json
 
 api_key = os.environ['ETSY_API_KEY'].strip()
+shared_secret = os.environ['ETSY_SHARED_SECRET'].strip()
 refresh_token = os.environ['ETSY_REFRESH_TOKEN'].strip()
 shop_id = os.environ['ETSY_SHOP_ID'].strip()
 
-print("--- DIAGNOSTIC INITIATED ---")
-print(f"Targeting Shop ID: {shop_id}")
-
-# 1. Exchange refresh token
+# 1. Exchange refresh token for a live access token
 token_url = "https://api.etsy.com/v3/public/oauth/token"
 payload = {
     "grant_type": "refresh_token",
@@ -15,27 +13,19 @@ payload = {
     "refresh_token": refresh_token
 }
 resp = requests.post(token_url, data=payload)
-
-if resp.status_code != 200:
-    print("Token Generation Failed:", resp.text)
-    exit(1)
-    
+resp.raise_for_status() 
 access_token = resp.json()['access_token']
-user_id = access_token.split('.')[0]
-print(f"Token Authorized For User ID: {user_id}")
 
-# 2. Pull receipts and catch the raw Etsy error
-headers = {'x-api-key': api_key, 'Authorization': f'Bearer {access_token}'}
+# 2. Pull latest receipts with the new keystring:secret header format
+headers = {
+    'x-api-key': f'{api_key}:{shared_secret}', 
+    'Authorization': f'Bearer {access_token}'
+}
 url = f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts"
 receipts_resp = requests.get(url, headers=headers)
+receipts_resp.raise_for_status()
+receipts = receipts_resp.json()
 
-if receipts_resp.status_code != 200:
-    print("\n--- RAW ETSY API ERROR ---")
-    print(receipts_resp.text)
-    print("--------------------------\n")
-    exit(1)
-
-# 3. Save if successful
+# 3. Save data directly to the repository
 with open('data.json', 'w') as f:
-    json.dump(receipts_resp.json(), f)
-print("Data successfully pulled!")
+    json.dump(receipts, f)
