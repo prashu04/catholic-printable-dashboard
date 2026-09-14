@@ -16,7 +16,7 @@ resp = requests.post(token_url, data=payload)
 resp.raise_for_status() 
 access_token = resp.json()['access_token']
 
-# 2. Pull live receipts from Etsy API v3
+# 2. Pull live receipts 
 headers = {
     'x-api-key': f'{api_key}:{shared_secret}', 
     'Authorization': f'Bearer {access_token}'
@@ -24,7 +24,10 @@ headers = {
 url = f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts"
 receipts_resp = requests.get(url, headers=headers)
 receipts_resp.raise_for_status()
-live_receipts = receipts_resp.json().get('results', receipts_resp.json())
+
+# Safely extract the results array from Etsy's response
+raw_data = receipts_resp.json()
+live_receipts = raw_data.get('results', raw_data)
 
 # 3. Verified Historical Baseline (Oct 2025 – Aug 2026)
 historical_months = [
@@ -41,7 +44,7 @@ historical_months = [
     { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# 4. Save combined payload containing BOTH historical baseline and live receipts to data.json
+# 4. Save combined payload
 payload_data = {
     "historical_months": historical_months,
     "results": live_receipts if isinstance(live_receipts, list) else []
@@ -49,5 +52,3 @@ payload_data = {
 
 with open('data.json', 'w') as f:
     json.dump(payload_data, f)
-
-print("Successfully synced historical baseline and live receipts to data.json")
