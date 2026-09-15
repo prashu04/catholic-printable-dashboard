@@ -1,4 +1,4 @@
-import os, requests, json, csv
+import os, requests, json, csv, io
 
 api_key = os.environ['ETSY_API_KEY'].strip()
 shared_secret = os.environ['ETSY_SHARED_SECRET'].strip()
@@ -42,65 +42,68 @@ historical_months = [
     { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# 4. Ingest Historical Order Items CSV with Encoding Fallback
+# 4. Ingest Historical Order Items CSV with Universal Binary Decoding
 historical_products = {}
 historical_buyers = {}
 
 csv_file_path = 'historical_order_items.csv'
 if os.path.exists(csv_file_path):
-    # Try utf-8 with error replacement, fallback to latin-1
-    try:
-        f = open(csv_file_path, mode='r', encoding='utf-8-sig', errors='replace')
-        reader = csv.DictReader(f)
-        # Test read first row to verify headers
-        next(reader, None)
-        f.seek(0)
-    except Exception:
-        f = open(csv_file_path, mode='r', encoding='latin-1', errors='replace')
-        reader = csv.DictReader(f)
-        f.seek(0)
+    with open(csv_file_path, 'rb') as f:
+        raw_bytes = f.read()
 
-    reader = csv.DictReader(f)
-    for row in reader:
-        if not row:
+    # Detect encoding by BOM or decode safely
+    text_content = None
+    for enc in ['utf-16', 'utf-16-le', 'utf-8-sig', 'latin-1']:
+        try:
+            text_content = raw_bytes.decode(enc)
+            break
+        except (UnicodeDecodeError, UnicodeError):
             continue
 
-        title_key = next((k for k in row if k and ('item name' in k.lower() or 'title' in k.lower())), None)
-        qty_key = next((k for k in row if k and 'quantity' in k.lower()), None)
-        price_key = next((k for k in row if k and ('item total' in k.lower() or 'price' in k.lower())), None)
-        buyer_key = next((k for k in row if k and ('buyer' in k.lower() or 'name' in k.lower())), None)
-        order_id_key = next((k for k in row if k and 'order id' in k.lower()), None)
+    if text_content:
+        # Strip any stray null bytes that crash python's csv parser
+        sanitized_csv = text_content.replace('\x00', '')
+        f_stream = io.StringIO(sanitized_csv)
+        reader = csv.DictReader(f_stream)
 
-        if not title_key or not row.get(title_key):
-            continue
+        for row in reader:
+            if not row:
+                continue
 
-        raw_title = row[title_key].strip()
-        short_title = raw_title.replace('—', '-').split('-')[0].split('|')[0].strip()[:50]
+            title_key = next((k for k in row if k and ('item name' in k.lower() or 'title' in k.lower())), None)
+            qty_key = next((k for k in row if k and 'quantity' in k.lower()), None)
+            price_key = next((k for k in row if k and ('item total' in k.lower() or 'price' in k.lower())), None)
+            buyer_key = next((k for k in row if k and ('buyer' in k.lower() or 'name' in k.lower())), None)
+            order_id_key = next((k for k in row if k and 'order id' in k.lower()), None)
 
-        def clean_num(v):
-            if not v: return 0.0
-            return float(str(v).replace('₹', '').replace('$', '').replace(',', '').strip() or 0)
+            if not title_key or not row.get(title_key):
+                continue
 
-        qty = int(clean_num(row.get(qty_key, 1))) if qty_key else 1
-        rev = clean_num(row.get(price_key, 0)) if price_key else 0.0
+            raw_title = str(row[title_key]).strip()
+            short_title = raw_title.replace('—', '-').split('-')[0].split('|')[0].strip()[:50]
 
-        if short_title not in historical_products:
-            historical_products[short_title] = {"title": short_title, "qty": 0, "revenue": 0.0}
-        historical_products[short_title]["qty"] += qty
-        historical_products[short_title]["revenue"] += rev
+            def clean_num(v):
+                if not v: return 0.0
+                return float(str(v).replace('₹', '').replace('$', '').replace(',', '').strip() or 0)
 
-        if buyer_key and row.get(buyer_key):
-            buyer = str(row[buyer_key]).strip()
-            order_id = str(row.get(order_id_key, '')).strip()
-            if buyer not in historical_buyers:
-                historical_buyers[buyer] = {"id": buyer, "orders": set(), "spend": 0.0}
-            if order_id:
-                historical_buyers[buyer]["orders"].add(order_id)
-            historical_buyers[buyer]["spend"] += rev
+            qty = int(clean_num(row.get(qty_key, 1))) if qty_key else 1
+            rev = clean_num(row.get(price_key, 0)) if price_key else 0.0
 
-    f.close()
+            if short_title not in historical_products:
+                historical_products[short_title] = {"title": short_title, "qty": 0, "revenue": 0.0}
+            historical_products[short_title]["qty"] += qty
+            historical_products[short_title]["revenue"] += rev
 
-    # Convert buyer order sets to integer counts for JSON serialization
+            if buyer_key and row.get(buyer_key):
+                buyer = str(row[buyer_key]).strip()
+                order_id = str(row.get(order_id_key, '')).strip()
+                if buyer not in historical_buyers:
+                    historical_buyers[buyer] = {"id": buyer, "orders": set(), "spend": 0.0}
+                if order_id:
+                    historical_buyers[buyer]["orders"].add(order_id)
+                historical_buyers[buyer]["spend"] += rev
+
+    # Convert buyer order sets to integer counts for clean JSON serialization
     historical_buyers = {
         k: {"id": v["id"], "orders": max(1, len(v["orders"])), "spend": round(v["spend"], 2)}
         for k, v in historical_buyers.items()
