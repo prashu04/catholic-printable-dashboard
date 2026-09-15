@@ -1,4 +1,4 @@
-import os, requests, json, csv, io
+import os, requests, json, csv
 
 api_key = os.environ['ETSY_API_KEY'].strip()
 shared_secret = os.environ['ETSY_SHARED_SECRET'].strip()
@@ -42,7 +42,7 @@ historical_months = [
     { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# 4. Ingest Historical Order Items CSV with Universal Binary Decoding
+# 4. Ingest Historical Order Items CSV (Universal Encoding + Clean Line Split)
 historical_products = {}
 historical_buyers = {}
 
@@ -51,7 +51,7 @@ if os.path.exists(csv_file_path):
     with open(csv_file_path, 'rb') as f:
         raw_bytes = f.read()
 
-    # Detect encoding by BOM or decode safely
+    # Detect encoding safely
     text_content = None
     for enc in ['utf-16', 'utf-16-le', 'utf-8-sig', 'latin-1']:
         try:
@@ -61,10 +61,11 @@ if os.path.exists(csv_file_path):
             continue
 
     if text_content:
-        # Strip any stray null bytes that crash python's csv parser
+        # Strip null bytes and split by any newline type (\r\n, \r, \n)
         sanitized_csv = text_content.replace('\x00', '')
-        f_stream = io.StringIO(sanitized_csv)
-        reader = csv.DictReader(f_stream)
+        lines = [line for line in sanitized_csv.splitlines() if line.strip()]
+        
+        reader = csv.DictReader(lines)
 
         for row in reader:
             if not row:
@@ -103,7 +104,7 @@ if os.path.exists(csv_file_path):
                     historical_buyers[buyer]["orders"].add(order_id)
                 historical_buyers[buyer]["spend"] += rev
 
-    # Convert buyer order sets to integer counts for clean JSON serialization
+    # Convert buyer order sets to integer counts for JSON serialization
     historical_buyers = {
         k: {"id": v["id"], "orders": max(1, len(v["orders"])), "spend": round(v["spend"], 2)}
         for k, v in historical_buyers.items()
