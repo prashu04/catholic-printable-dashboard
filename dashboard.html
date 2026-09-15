@@ -61,7 +61,7 @@
         .breakeven-title { font-weight: 600; color: #975a16; font-size: 16px; }
         .breakeven-value { font-size: 22px; font-weight: bold; color: #744210; }
 
-        /* Pipeline Indicator */
+        /* Status Section */
         .upload-section { padding: 20px 10px; margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
         .pipeline-status { background: #2d3748; padding: 15px; border-radius: 6px; text-align: center; border: 1px solid #4a5568; }
         .pipeline-title { font-size: 11px; color: #a0aec0; text-transform: uppercase; font-weight: bold; margin-bottom: 5px; }
@@ -77,7 +77,7 @@
         .heat-cell { flex: 1; height: 25px; background-color: #ebf8fa; border-radius: 3px; position: relative; cursor: pointer; transition: 0.2s; }
         .heat-cell:hover { transform: scale(1.1); z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.2); border: 1px solid #2d3748; }
 
-        /* Custom Tooltip */
+        /* Tooltip */
         #custom-tooltip {
             position: absolute;
             background: #1a202c;
@@ -224,7 +224,7 @@
                 
                 <div class="chart-container">
                     <h3 style="margin-top: 0;">3. Repeat Purchaser Leaderboard</h3>
-                    <p style="font-size: 13px; color: #718096;">Top loyal patrons identified via Shipping Name.</p>
+                    <p style="font-size: 13px; color: #718096;">Top loyal patrons identified across all orders.</p>
                     <table style="margin-top: 10px;">
                         <thead>
                             <tr>
@@ -369,7 +369,7 @@
             evt.currentTarget.classList.add("active");
         }
 
-        // Automatic Pipeline Fetch with Cache-Busting & Console Diagnostics
+        // Automatic Pipeline Fetch with Cache Buster
         function fetchPipelineData() {
             const cacheBuster = `data.json?v=${new Date().getTime()}`;
 
@@ -379,8 +379,6 @@
                     return response.json();
                 })
                 .then(data => {
-                    console.log("Raw Ingested Data:", data);
-                    
                     document.getElementById('status-indicator').innerText = '✅ LIVE';
                     document.getElementById('status-indicator').style.color = '#38a169';
                     
@@ -394,11 +392,11 @@
                 });
         }
 
-        // Parse Etsy API JSON Structure & Seed Baseline Ledger
+        // Parse Etsy JSON Structure with Injected Product & Customer Baseline
         function processAPIReceipts(data) {
             let monthlyData = {};
             
-            // 1. Seed Verified Historical Baseline (Oct 2025 - Aug 2026)
+            // 1. Seed Verified Historical Months
             if (data.historical_months && Array.isArray(data.historical_months)) {
                 data.historical_months.forEach(m => {
                     monthlyData[m.month] = { 
@@ -414,16 +412,33 @@
                 });
             }
 
-            // 2. Process Live API Receipts
-            let results = data.results || (Array.isArray(data) ? data : []);
+            // 2. Initialize Seed States for Products and Buyers from Anchor CSV
             let itemStats = {};
+            if (data.historical_products && Array.isArray(data.historical_products)) {
+                data.historical_products.forEach(p => {
+                    itemStats[p.title] = { title: p.title, qty: p.qty, revenue: p.revenue };
+                });
+            }
+
+            buyerLedger = {};
+            if (data.historical_buyers && Array.isArray(data.historical_buyers)) {
+                data.historical_buyers.forEach(b => {
+                    buyerLedger[b.id] = { 
+                        id: b.id, 
+                        orderIds: new Set(Array.from({length: b.orders}, (_, i) => `hist-${b.id}-${i}`)), 
+                        spend: b.spend 
+                    };
+                });
+            }
+
+            let results = data.results || [];
             let orderBaskets = {};
             
             heatmapData = Array(7).fill().map(() => Array(12).fill(0));
             maxHeat = 0;
             priceTiers = { low: 0, mid: 0, high: 0 };
-            buyerLedger = {};
 
+            // 3. Process Live API Receipts for Current Months
             results.forEach(receipt => {
                 let timestamp = receipt.created_timestamp || receipt.creation_tsz;
                 if (!timestamp) return;
@@ -439,7 +454,7 @@
                         fees: 0, 
                         adFees: 0, 
                         refunds: 0, 
-                        profit: 0,
+                        profit: 0, 
                         isHistorical: false 
                     };
                 }
@@ -449,7 +464,7 @@
                     amount = (receipt.grandtotal.amount || 0) / (receipt.grandtotal.divisor || 1);
                 }
 
-                // If this month is live (not an immutable baseline month), calculate totals
+                // Calculate fees only if not marked immutable historical
                 if (!monthlyData[monthKey].isHistorical) {
                     let transPercent = parseFloat(document.getElementById('fee-trans').value) || 6.5;
                     let procPercent = parseFloat(document.getElementById('fee-proc').value) || 5;
@@ -464,10 +479,12 @@
                     monthlyData[monthKey].fees -= estimatedFees;
                 }
 
-                // Repeat Buyer Tracking
+                // Aggregate Buyer Records
                 let buyerName = receipt.name || receipt.buyer_email || "Etsy Buyer";
                 let cleanBuyer = String(buyerName).trim();
-                if (!buyerLedger[cleanBuyer]) buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
+                if (!buyerLedger[cleanBuyer]) {
+                    buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
+                }
                 buyerLedger[cleanBuyer].orderIds.add(receipt.receipt_id);
                 buyerLedger[cleanBuyer].spend += amount;
 
@@ -477,7 +494,7 @@
                 heatmapData[day][month] += 1;
                 if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
 
-                // Product Parsing
+                // Item and Basket Parsing
                 if (receipt.transactions && Array.isArray(receipt.transactions)) {
                     receipt.transactions.forEach(tx => {
                         let itemName = tx.title || "Unknown Item";
@@ -488,7 +505,7 @@
                         }
                         let itemTotal = price * qty;
 
-                        let shortName = itemName.split(/[-|]/)[0].trim().substring(0, 50);
+                        let shortName = itemName.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
                         if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
                         itemStats[shortName].qty += qty;
                         itemStats[shortName].revenue += itemTotal;
@@ -503,7 +520,6 @@
                 }
             });
 
-            // 3. Process Financials Array
             historicalData = Object.values(monthlyData).map(m => {
                 if (!m.isHistorical) {
                     m.profit = m.sales + m.fees + m.adFees + m.refunds;
@@ -511,10 +527,8 @@
                 return m;
             }).sort((a, b) => a.month.localeCompare(b.month));
 
-            // 4. Process Product Array
             productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
 
-            // 5. Process Market Baskets
             let pairCounts = {};
             Object.values(orderBaskets).forEach(items => {
                 if (items.length > 1) {
@@ -532,7 +546,6 @@
                 .map(pair => ({ pair: pair, count: pairCounts[pair] }))
                 .sort((a, b) => b.count - a.count).slice(0, 5);
 
-            // Refresh UI
             refreshFinancialDashboard();
             if (productData.length > 0) refreshProductDashboard();
             refreshAdvancedDashboard();
@@ -621,6 +634,7 @@
         }
 
         function refreshAdvancedDashboard() {
+            // Heatmap
             const heatContainer = document.getElementById('heatmap-container');
             heatContainer.innerHTML = '';
             
@@ -678,6 +692,7 @@
                 heatContainer.appendChild(rowDiv);
             });
 
+            // Leaderboard
             let topBuyers = Object.values(buyerLedger)
                 .map(b => ({ id: b.id, orders: b.orderIds.size, spend: b.spend }))
                 .filter(b => b.orders > 1) 
@@ -696,6 +711,7 @@
                 });
             }
 
+            // Price Tier
             if (chartTier) chartTier.destroy();
             chartTier = new Chart(document.getElementById('tierDoughnut').getContext('2d'), {
                 type: 'doughnut',
@@ -769,4 +785,3 @@
     </script>
 </body>
 </html>
-
