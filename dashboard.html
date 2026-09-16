@@ -370,27 +370,191 @@
         }
 
         // Automatic Pipeline Fetch with Cache Buster
-        function fetchPipelineData() {
-            const cacheBuster = `data.json?v=${new Date().getTime()}`;
+    function fetchPipelineData() {
+        const cacheBuster = `data.json?v=${new Date().getTime()}`;
+        fetch(cacheBuster)
+            .then(response => {
+                if (!response.ok) throw new Error("data.json not found");
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('status-indicator').innerText = '✅ LIVE';
+                document.getElementById('status-indicator').style.color = '#38a169';
+                processPipelinePayload(data);
+            })
+            .catch(error => {
+                console.warn("Pipeline pending:", error);
+                document.getElementById('status-indicator').innerText = '⚠️ Awaiting Pipeline Data';
+                document.getElementById('status-indicator').style.color = '#e53e3e';
+            });
+    }
 
-            fetch(cacheBuster)
-                .then(response => {
-                    if (!response.ok) throw new Error("data.json not found");
-                    return response.json();
-                })
-                .then(data => {
-                    document.getElementById('status-indicator').innerText = '✅ LIVE';
-                    document.getElementById('status-indicator').style.color = '#38a169';
-                    
-                    processAPIReceipts(data);
-                })
-                .catch(error => {
-                    console.error("Pipeline pending or fetch failed:", error);
-                    document.getElementById('status-indicator').innerText = '⚠️ Awaiting Pipeline Data';
-                    document.getElementById('status-indicator').style.color = '#e53e3e';
-                    document.getElementById('history-body').innerHTML = `<tr><td colspan="7" style="text-align: center; color: #e53e3e;">Failed to load live data: ${error.message}</td></tr>`;
-                });
+    function processPipelinePayload(data) {
+        let monthlyData = {};
+
+        // 1. Seed Financial Baseline
+        if (data.historical_months && Array.isArray(data.historical_months)) {
+            data.historical_months.forEach(m => {
+                monthlyData[m.month] = { 
+                    month: m.month,
+                    orders: Number(m.orders) || 0,
+                    sales: Number(m.sales) || 0,
+                    fees: Number(m.fees) || 0,
+                    adFees: Number(m.adFees) || 0,
+                    refunds: Number(m.refunds) || 0,
+                    profit: Number(m.profit) || 0,
+                    isHistorical: true
+                };
+            });
         }
+
+        // 2. Seed Historical Products
+        let itemStats = {};
+        if (data.historical_products && Array.isArray(data.historical_products)) {
+            data.historical_products.forEach(p => {
+                itemStats[p.title] = { title: p.title, qty: p.qty, revenue: p.revenue };
+            });
+        }
+
+        // 3. Seed Historical Buyers
+        buyerLedger = {};
+        if (data.historical_buyers && Array.isArray(data.historical_buyers)) {
+            data.historical_buyers.forEach(b => {
+                buyerLedger[b.id] = { 
+                    id: b.id, 
+                    orderIds: new Set(Array.from({length: b.orders}, (_, i) => `hist-${b.id}-${i}`)), 
+                    spend: b.spend 
+                };
+            });
+        }
+
+        // 4. Seed Historical Heatmap
+        heatmapData = Array(7).fill().map(() => Array(12).fill(0));
+        if (data.historical_heatmap && Array.isArray(data.historical_heatmap)) {
+            for (let d = 0; d < 7; d++) {
+                for (let m = 0; m < 12; m++) {
+                    heatmapData[d][m] = (data.historical_heatmap[d] && data.historical_heatmap[d][m]) || 0;
+                }
+            }
+        }
+
+        priceTiers = { low: 0, mid: 0, high: 0 };
+        // Populate price tiers from seeded products
+        Object.values(itemStats).forEach(item => {
+            let avgPrice = item.qty > 0 ? item.revenue / item.qty : item.revenue;
+            if (avgPrice < 250) priceTiers.low += item.revenue;
+            else if (avgPrice <= 750) priceTiers.mid += item.revenue;
+            else priceTiers.high += item.revenue;
+        });
+
+        // 5. Ingest Live Receipts
+        let results = data.results || [];
+        let orderBaskets = {};
+
+        results.forEach(receipt => {
+            let timestamp = receipt.created_timestamp || receipt.creation_tsz;
+            if (!timestamp) return;
+            
+            let d = new Date(timestamp * 1000);
+            let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = { month: monthKey, orders: 0, sales: 0, fees: 0, adFees: 0, refunds: 0, profit: 0, isHistorical: false };
+            }
+
+            let amount = 0;
+            if (receipt.grandtotal) {
+                amount = receipt.grandtotal.amount / (receipt.grandtotal.divisor || 1);
+            }
+
+            if (!monthlyData[monthKey].isHistorical) {
+                let transPercent = parseFloat(document.getElementById('fee-trans').value) || 6.5;
+                let procPercent = parseFloat(document.getElementById('fee-proc').value) || 5;
+                let fixedProc = parseFloat(document.getElementById('fee-proc-fixed').value) || 25;
+                let listingFee = parseFloat(document.getElementById('fee-listing').value) || 18;
+                let regPercent = parseFloat(document.getElementById('fee-reg').value) || 0.29;
+                
+                let estimatedFees = (amount * (transPercent / 100)) + (amount * (procPercent / 100)) + fixedProc + (amount * (regPercent / 100)) + listingFee;
+
+                monthlyData[monthKey].orders += 1;
+                monthlyData[monthKey].sales += amount;
+                monthlyData[monthKey].fees -= estimatedFees;
+            }
+
+            let buyerName = receipt.name || receipt.buyer_email || "Etsy Buyer";
+            let cleanBuyer = String(buyerName).trim();
+            if (!buyerLedger[cleanBuyer]) buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
+            buyerLedger[cleanBuyer].orderIds.add(receipt.receipt_id);
+            buyerLedger[cleanBuyer].spend += amount;
+
+            heatmapData[d.getDay()][d.getMonth()] += 1;
+
+            if (receipt.transactions && Array.isArray(receipt.transactions)) {
+                receipt.transactions.forEach(tx => {
+                    let itemName = tx.title || "Unknown Item";
+                    let qty = tx.quantity || 1;
+                    let price = tx.price ? (tx.price.amount / (tx.price.divisor || 1)) : 0;
+                    let itemTotal = price * qty;
+                    let shortName = itemName.split(/[-|]/)[0].trim().substring(0, 50);
+
+                    if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
+                    itemStats[shortName].qty += qty;
+                    itemStats[shortName].revenue += itemTotal;
+
+                    if (!orderBaskets[receipt.receipt_id]) orderBaskets[receipt.receipt_id] = [];
+                    orderBaskets[receipt.receipt_id].push(shortName);
+
+                    if (itemTotal < 250) priceTiers.low += itemTotal;
+                    else if (itemTotal <= 750) priceTiers.mid += itemTotal;
+                    else priceTiers.high += itemTotal;
+                });
+            }
+        });
+
+        // Compute maxHeat
+        maxHeat = 0;
+        for (let d = 0; d < 7; d++) {
+            for (let m = 0; m < 12; m++) {
+                if (heatmapData[d][m] > maxHeat) maxHeat = heatmapData[d][m];
+            }
+        }
+
+        // Market Basket pairs (merge historical + live)
+        marketBasketPairs = data.historical_baskets || [];
+        let pairCounts = {};
+        Object.values(orderBaskets).forEach(items => {
+            if (items.length > 1) {
+                let uniqueItems = [...new Set(items)]; 
+                for (let i = 0; i < uniqueItems.length; i++) {
+                    for (let j = i + 1; j < uniqueItems.length; j++) {
+                        let pair = [uniqueItems[i], uniqueItems[j]].sort().join(" + ");
+                        pairCounts[pair] = (pairCounts[pair] || 0) + 1;
+                    }
+                }
+            }
+        });
+        Object.keys(pairCounts).forEach(pair => {
+            let existing = marketBasketPairs.find(p => p.pair === pair);
+            if (existing) existing.count += pairCounts[pair];
+            else marketBasketPairs.push({ pair: pair, count: pairCounts[pair] });
+        });
+        marketBasketPairs.sort((a, b) => b.count - a.count);
+
+        historicalData = Object.values(monthlyData).map(m => {
+            if (!m.isHistorical) m.profit = m.sales + m.fees + m.adFees + m.refunds;
+            return m;
+        }).sort((a, b) => a.month.localeCompare(b.month));
+
+        productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
+
+        // Render all views
+        refreshFinancialDashboard();
+        refreshProductDashboard();
+        refreshAdvancedDashboard();
+    }
+
+
+
 
         // Parse Etsy JSON Structure with Injected Product & Customer Baseline
         function processAPIReceipts(data) {
