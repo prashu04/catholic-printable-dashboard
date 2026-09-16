@@ -1,9 +1,10 @@
 import os, requests, json, csv
+from datetime import datetime
 
-api_key = os.environ['ETSY_API_KEY'].strip()
-shared_secret = os.environ['ETSY_SHARED_SECRET'].strip()
-refresh_token = os.environ['ETSY_REFRESH_TOKEN'].strip()
-shop_id = os.environ['ETSY_SHOP_ID'].strip()
+api_key = os.environ.get('ETSY_API_KEY', '').strip()
+shared_secret = os.environ.get('ETSY_SHARED_SECRET', '').strip()
+refresh_token = os.environ.get('ETSY_REFRESH_TOKEN', '').strip()
+shop_id = os.environ.get('ETSY_SHOP_ID', '').strip()
 
 # 1. Exchange refresh token for access token
 token_url = "https://api.etsy.com/v3/public/oauth/token"
@@ -45,27 +46,42 @@ historical_months = [
 # 4. Ingest Historical Order Items CSV
 historical_products = {}
 historical_buyers = {}
+historical_heatmap = [[0 for _ in range(12)] for _ in range(7)]
+historical_baskets = {}
+
 csv_file_path = 'historical_order_items.csv'
 
 if os.path.exists(csv_file_path):
-    with open(csv_file_path, mode='r', encoding='utf-8', errors='replace') as f:
-        # Strip out null bytes that cause Etsy CSVs to crash Python
-        def clean_lines(file_obj):
-            for line in file_obj:
-                yield line.replace('\x00', '')
-        
-        reader = csv.DictReader(clean_lines(f))
+    with open(csv_file_path, 'rb') as f:
+        raw_bytes = f.read()
+
+    text_content = None
+    for enc in ['utf-8-sig', 'utf-16', 'latin-1', 'cp1252']:
+        try:
+            text_content = raw_bytes.decode(enc)
+            break
+        except Exception:
+            continue
+
+    if text_content:
+        clean_text = text_content.replace('\x00', '')
+        lines = [l for l in clean_text.splitlines() if l.strip()]
+        reader = csv.DictReader(lines)
+
         for row in reader:
+            if not row: continue
+
             title_key = next((k for k in row if k and ('item name' in k.lower() or 'title' in k.lower())), None)
             qty_key = next((k for k in row if k and 'quantity' in k.lower()), None)
             price_key = next((k for k in row if k and ('item total' in k.lower() or 'price' in k.lower())), None)
             buyer_key = next((k for k in row if k and ('buyer' in k.lower() or 'name' in k.lower())), None)
             order_id_key = next((k for k in row if k and 'order id' in k.lower()), None)
+            date_key = next((k for k in row if k and ('sale date' in k.lower() or 'date' in k.lower())), None)
 
-            if not title_key or not row[title_key]:
+            if not title_key or not row.get(title_key):
                 continue
 
-            raw_title = row[title_key].strip()
+            raw_title = str(row[title_key]).strip()
             short_title = raw_title.replace('—', '-').split('-')[0].split('|')[0].strip()[:50]
 
             def clean_num(v):
@@ -75,34 +91,75 @@ if os.path.exists(csv_file_path):
             qty = int(clean_num(row.get(qty_key, 1))) if qty_key else 1
             rev = clean_num(row.get(price_key, 0)) if price_key else 0.0
 
+            # Aggregate Products
             if short_title not in historical_products:
                 historical_products[short_title] = {"title": short_title, "qty": 0, "revenue": 0.0}
             historical_products[short_title]["qty"] += qty
             historical_products[short_title]["revenue"] += rev
 
+            # Track Order Baskets
+            order_id = str(row.get(order_id_key, '')).strip() if order_id_key else ''
+            if order_id:
+                if order_id not in historical_baskets:
+                    historical_baskets[order_id] = []
+                historical_baskets[order_id].append(short_title)
+
+            # Aggregate Buyers
             if buyer_key and row.get(buyer_key):
-                buyer = row[buyer_key].strip()
-                order_id = row.get(order_id_key, '').strip()
+                buyer = str(row[buyer_key]).strip()
                 if buyer not in historical_buyers:
                     historical_buyers[buyer] = {"id": buyer, "orders": set(), "spend": 0.0}
                 if order_id:
                     historical_buyers[buyer]["orders"].add(order_id)
                 historical_buyers[buyer]["spend"] += rev
 
+            # Aggregate Date for Heatmap
+            if date_key and row.get(date_key):
+                try:
+                    d_val = row[date_key].strip()
+                    dt = None
+                    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y"):
+                        try:
+                            dt = datetime.strptime(d_val, fmt)
+                            break
+                        except ValueError:
+                            pass
+                    if dt:
+                        d_idx = (dt.weekday() + 1) % 7 # Sun = 0
+                        m_idx = dt.month - 1
+                        historical_heatmap[d_idx][m_idx] += 1
+                except Exception:
+                    pass
+
+    # Convert sets for JSON export
     historical_buyers = {
         k: {"id": v["id"], "orders": max(1, len(v["orders"])), "spend": round(v["spend"], 2)}
         for k, v in historical_buyers.items()
     }
+
+# Calculate basket pairs
+pair_counts = {}
+for items in historical_baskets.values():
+    if len(items) > 1:
+        u_items = list(set(items))
+        for i in range(len(u_items)):
+            for j in range(i + 1, len(u_items)):
+                pair = " + ".join(sorted([u_items[i], u_items[j]]))
+                pair_counts[pair] = pair_counts.get(pair, 0) + 1
+
+market_baskets = [{"pair": k, "count": v} for k, v in sorted(pair_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
 
 # 5. Output Unified Payload
 payload_data = {
     "historical_months": historical_months,
     "historical_products": list(historical_products.values()),
     "historical_buyers": list(historical_buyers.values()),
+    "historical_heatmap": historical_heatmap,
+    "historical_baskets": market_baskets,
     "results": live_receipts if isinstance(live_receipts, list) else []
 }
 
 with open('data.json', 'w') as f:
     json.dump(payload_data, f)
 
-print("Unified data.json successfully updated.")
+print("Unified data.json generated successfully.")
