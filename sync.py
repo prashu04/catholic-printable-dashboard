@@ -42,45 +42,30 @@ historical_months = [
     { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
 ]
 
-# 4. Ingest Historical Order Items CSV (Universal Encoding + Clean Line Split)
+# 4. Ingest Historical Order Items CSV
 historical_products = {}
 historical_buyers = {}
-
 csv_file_path = 'historical_order_items.csv'
+
 if os.path.exists(csv_file_path):
-    with open(csv_file_path, 'rb') as f:
-        raw_bytes = f.read()
-
-    # Detect encoding safely
-    text_content = None
-    for enc in ['utf-16', 'utf-16-le', 'utf-8-sig', 'latin-1']:
-        try:
-            text_content = raw_bytes.decode(enc)
-            break
-        except (UnicodeDecodeError, UnicodeError):
-            continue
-
-    if text_content:
-        # Strip null bytes and split by any newline type (\r\n, \r, \n)
-        sanitized_csv = text_content.replace('\x00', '')
-        lines = [line for line in sanitized_csv.splitlines() if line.strip()]
+    with open(csv_file_path, mode='r', encoding='utf-8', errors='replace') as f:
+        # Strip out null bytes that cause Etsy CSVs to crash Python
+        def clean_lines(file_obj):
+            for line in file_obj:
+                yield line.replace('\x00', '')
         
-        reader = csv.DictReader(lines)
-
+        reader = csv.DictReader(clean_lines(f))
         for row in reader:
-            if not row:
-                continue
-
             title_key = next((k for k in row if k and ('item name' in k.lower() or 'title' in k.lower())), None)
             qty_key = next((k for k in row if k and 'quantity' in k.lower()), None)
             price_key = next((k for k in row if k and ('item total' in k.lower() or 'price' in k.lower())), None)
             buyer_key = next((k for k in row if k and ('buyer' in k.lower() or 'name' in k.lower())), None)
             order_id_key = next((k for k in row if k and 'order id' in k.lower()), None)
 
-            if not title_key or not row.get(title_key):
+            if not title_key or not row[title_key]:
                 continue
 
-            raw_title = str(row[title_key]).strip()
+            raw_title = row[title_key].strip()
             short_title = raw_title.replace('—', '-').split('-')[0].split('|')[0].strip()[:50]
 
             def clean_num(v):
@@ -96,15 +81,14 @@ if os.path.exists(csv_file_path):
             historical_products[short_title]["revenue"] += rev
 
             if buyer_key and row.get(buyer_key):
-                buyer = str(row[buyer_key]).strip()
-                order_id = str(row.get(order_id_key, '')).strip()
+                buyer = row[buyer_key].strip()
+                order_id = row.get(order_id_key, '').strip()
                 if buyer not in historical_buyers:
                     historical_buyers[buyer] = {"id": buyer, "orders": set(), "spend": 0.0}
                 if order_id:
                     historical_buyers[buyer]["orders"].add(order_id)
                 historical_buyers[buyer]["spend"] += rev
 
-    # Convert buyer order sets to integer counts for JSON serialization
     historical_buyers = {
         k: {"id": v["id"], "orders": max(1, len(v["orders"])), "spend": round(v["spend"], 2)}
         for k, v in historical_buyers.items()
@@ -121,4 +105,4 @@ payload_data = {
 with open('data.json', 'w') as f:
     json.dump(payload_data, f)
 
-print("Unified data.json successfully generated.")
+print("Unified data.json successfully updated.")
