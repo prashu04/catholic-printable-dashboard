@@ -1,12 +1,21 @@
-import os, requests, json, csv
-from datetime import datetime
+import os
+import requests
+from datetime import datetime, timezone
+from supabase import create_client, Client
 
-api_key = os.environ.get('ETSY_API_KEY', '').strip()
-shared_secret = os.environ.get('ETSY_SHARED_SECRET', '').strip()
-refresh_token = os.environ.get('ETSY_REFRESH_TOKEN', '').strip()
-shop_id = os.environ.get('ETSY_SHOP_ID', '').strip()
+# 1. Fetch credentials from environment
+api_key = os.environ['ETSY_API_KEY'].strip()
+shared_secret = os.environ['ETSY_SHARED_SECRET'].strip()
+refresh_token = os.environ['ETSY_REFRESH_TOKEN'].strip()
+shop_id = os.environ['ETSY_SHOP_ID'].strip()
 
-# 1. Exchange refresh token for live access token
+supabase_url = os.environ['SUPABASE_URL'].strip()
+supabase_key = os.environ['SUPABASE_SERVICE_KEY'].strip()
+
+# Initialize Supabase client
+supabase: Client = create_client(supabase_url, supabase_key)
+
+# 2. Exchange refresh token for access token
 token_url = "https://api.etsy.com/v3/public/oauth/token"
 payload = {
     "grant_type": "refresh_token",
@@ -14,12 +23,12 @@ payload = {
     "refresh_token": refresh_token
 }
 resp = requests.post(token_url, data=payload)
-resp.raise_for_status() 
+resp.raise_for_status()
 access_token = resp.json()['access_token']
 
-# 2. Pull live receipts from Etsy API v3
+# 3. Pull live receipts from Etsy API v3
 headers = {
-    'x-api-key': f'{api_key}:{shared_secret}', 
+    'x-api-key': f'{api_key}:{shared_secret}',
     'Authorization': f'Bearer {access_token}'
 }
 url = f"https://api.etsy.com/v3/application/shops/{shop_id}/receipts"
@@ -28,137 +37,70 @@ receipts_resp.raise_for_status()
 raw_data = receipts_resp.json()
 live_receipts = raw_data.get('results', raw_data)
 
-# 3. Verified Historical Baseline Financials (Oct 2025 – Aug 2026)
-historical_months = [
-    { "month": "2025-10", "orders": 0, "sales": 0, "fees": -224, "adFees": 0, "refunds": 0, "profit": -224 },
-    { "month": "2025-11", "orders": 2, "sales": 64, "fees": -135, "adFees": 0, "refunds": 0, "profit": -71 },
-    { "month": "2025-12", "orders": 5, "sales": 288, "fees": -281, "adFees": 0, "refunds": 0, "profit": 7 },
-    { "month": "2026-01", "orders": 12, "sales": 1129, "fees": -713, "adFees": 0, "refunds": 0, "profit": 416 },
-    { "month": "2026-02", "orders": 12, "sales": 1389, "fees": -836, "adFees": 0, "refunds": 0, "profit": 553 },
-    { "month": "2026-03", "orders": 7, "sales": 2123, "fees": -759, "adFees": -434, "refunds": -360, "profit": 570 },
-    { "month": "2026-04", "orders": 11, "sales": 5187, "fees": -1428, "adFees": 0, "refunds": -500, "profit": 3259 },
-    { "month": "2026-05", "orders": 5, "sales": 1191, "fees": -462, "adFees": 0, "refunds": 0, "profit": 729 },
-    { "month": "2026-06", "orders": 15, "sales": 4096, "fees": -1418, "adFees": -36, "refunds": 0, "profit": 2642 },
-    { "month": "2026-07", "orders": 19, "sales": 4762, "fees": -1659, "adFees": -167, "refunds": -326, "profit": 2610 },
-    { "month": "2026-08", "orders": 21, "sales": 6994, "fees": -2374, "adFees": -152, "refunds": 0, "profit": 4468 }
-]
+print(f"Fetched {len(live_receipts)} receipts from Etsy API.")
 
-# 4. Ingest Historical CSV Anchor
-historical_products = {}
-historical_buyers = {}
-historical_heatmap = [[0 for _ in range(12)] for _ in range(7)]
-historical_baskets = {}
+# 4. Upsert Receipts and Line Items into Supabase
+orders_to_upsert = []
+items_to_insert = []
 
-csv_file_path = 'historical_order_items.csv'
+for receipt in live_receipts:
+    receipt_id = receipt.get('receipt_id')
+    ts = receipt.get('created_timestamp') or receipt.get('creation_tsz')
+    if not receipt_id or not ts:
+        continue
 
-if os.path.exists(csv_file_path):
-    with open(csv_file_path, 'rb') as f:
-        raw_bytes = f.read()
+    order_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    
+    # Grand total extraction
+    grandtotal = 0.0
+    if receipt.get('grandtotal'):
+        grandtotal = (receipt['grandtotal'].get('amount') or 0.0) / (receipt['grandtotal'].get('divisor') or 1)
 
-    text_content = ""
-    for enc in ['utf-8-sig', 'utf-16', 'latin-1', 'cp1252']:
-        try:
-            text_content = raw_bytes.decode(enc)
-            break
-        except Exception:
-            continue
+    # Standard Etsy fee estimation (6.5% trans + 5% + ₹25 proc + ₹18 listing + 0.29% reg)
+    est_fees = (grandtotal * 0.065) + (grandtotal * 0.05) + 25.0 + (grandtotal * 0.0029) + 18.0
 
-    if text_content:
-        clean_text = text_content.replace('\x00', '')
-        lines = [line for line in clean_text.splitlines() if line.strip()]
-        reader = csv.DictReader(lines)
+    buyer = str(receipt.get('name') or receipt.get('buyer_email') or 'Etsy Buyer').strip()
+    
+    orders_to_upsert.append({
+        "receipt_id": receipt_id,
+        "order_timestamp": order_dt.isoformat(),
+        "buyer_name": buyer,
+        "grandtotal": round(grandtotal, 2),
+        "estimated_fees": round(est_fees, 2),
+        "day_of_week": (order_dt.weekday() + 1) % 7,  # Sunday = 0
+        "month_index": order_dt.month - 1              # Jan = 0
+    })
 
-        def clean_num(val):
-            if not val: return 0.0
-            s = str(val).replace('₹', '').replace('$', '').replace(',', '').strip()
-            try:
-                return float(s)
-            except ValueError:
-                return 0.0
+    # Line items parsing
+    transactions = receipt.get('transactions', [])
+    for tx in transactions:
+        title = tx.get('title') or 'Digital Download'
+        short_title = title.split('—')[0].split('-')[0].split('|')[0].strip()[:50]
+        qty = tx.get('quantity') or 1
+        
+        price = 0.0
+        if tx.get('price'):
+            price = (tx['price'].get('amount') or 0.0) / (tx['price'].get('divisor') or 1)
+        
+        items_to_insert.append({
+            "receipt_id": receipt_id,
+            "item_title": short_title,
+            "quantity": qty,
+            "price": round(price, 2),
+            "item_total": round(price * qty, 2)
+        })
 
-        for row in reader:
-            if not row: continue
+# 5. Push data to database
+if orders_to_upsert:
+    supabase.table("orders").upsert(orders_to_upsert, on_conflict="receipt_id").execute()
+    print(f"Successfully upserted {len(orders_to_upsert)} orders.")
 
-            # Dynamic key detection
-            title_key = next((k for k in row if k and ('item name' in k.lower() or 'title' in k.lower())), None)
-            qty_key = next((k for k in row if k and 'quantity' in k.lower()), None)
-            price_key = next((k for k in row if k and ('price' in k.lower() or 'item total' in k.lower())), None)
-            buyer_key = next((k for k in row if k and ('buyer' in k.lower() or 'name' in k.lower())), None)
-            order_key = next((k for k in row if k and 'order id' in k.lower()), None)
-            date_key = next((k for k in row if k and ('date' in k.lower())), None)
+if items_to_insert:
+    # Clear existing line items for these receipts to avoid duplicate entries on re-syncs
+    receipt_ids = [o["receipt_id"] for o in orders_to_upsert]
+    supabase.table("order_items").delete().in_("receipt_id", receipt_ids).execute()
+    
+    supabase.table("order_items").insert(items_to_insert).execute()
+    print(f"Successfully inserted {len(items_to_insert)} line items.")
 
-            if not title_key or not row.get(title_key):
-                continue
-
-            raw_title = str(row[title_key]).strip()
-            short_title = raw_title.replace('—', '-').split('-')[0].split('|')[0].strip()[:50]
-            
-            qty = int(clean_num(row.get(qty_key, 1))) if qty_key else 1
-            rev = clean_num(row.get(price_key, 0.0)) if price_key else 0.0
-
-            # Products
-            if short_title not in historical_products:
-                historical_products[short_title] = {"title": short_title, "qty": 0, "revenue": 0.0}
-            historical_products[short_title]["qty"] += qty
-            historical_products[short_title]["revenue"] += rev
-
-            # Buyers
-            order_id = str(row.get(order_key, '')).strip() if order_key else ''
-            if buyer_key and row.get(buyer_key):
-                buyer = str(row[buyer_key]).strip()
-                if buyer not in historical_buyers:
-                    historical_buyers[buyer] = {"id": buyer, "orders": set(), "spend": 0.0}
-                if order_id:
-                    historical_buyers[buyer]["orders"].add(order_id)
-                historical_buyers[buyer]["spend"] += rev
-
-            # Baskets
-            if order_id:
-                if order_id not in historical_baskets:
-                    historical_baskets[order_id] = []
-                historical_baskets[order_id].append(short_title)
-
-            # Heatmap
-            if date_key and row.get(date_key):
-                d_str = str(row[date_key]).strip()
-                dt = None
-                for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                    try:
-                        dt = datetime.strptime(d_str, fmt)
-                        break
-                    except ValueError:
-                        pass
-                if dt:
-                    historical_heatmap[(dt.weekday() + 1) % 7][dt.month - 1] += 1
-
-    historical_buyers = {
-        k: {"id": v["id"], "orders": max(1, len(v["orders"])), "spend": round(v["spend"], 2)}
-        for k, v in historical_buyers.items()
-    }
-
-# Basket pairs calculation
-pair_counts = {}
-for items in historical_baskets.values():
-    if len(items) > 1:
-        u_items = list(set(items))
-        for i in range(len(u_items)):
-            for j in range(i + 1, len(u_items)):
-                pair = " + ".join(sorted([u_items[i], u_items[j]]))
-                pair_counts[pair] = pair_counts.get(pair, 0) + 1
-
-market_baskets = [{"pair": k, "count": v} for k, v in sorted(pair_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
-
-# 5. Output Unified JSON Payload
-payload_data = {
-    "historical_months": historical_months,
-    "historical_products": list(historical_products.values()),
-    "historical_buyers": list(historical_buyers.values()),
-    "historical_heatmap": historical_heatmap,
-    "historical_baskets": market_baskets,
-    "results": live_receipts if isinstance(live_receipts, list) else []
-}
-
-with open('data.json', 'w') as f:
-    json.dump(payload_data, f)
-
-print(f"Data sync complete. Loaded {len(historical_products)} historical products and {len(historical_buyers)} buyers.")
+print("Sync completed successfully!")
