@@ -6,6 +6,8 @@
     <title>Prashanth's Etsy Dashboard | Catholic Printable Co.</title>
     <!-- Chart.js for visualizations -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase SDK for Serverless Database -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --sidebar-bg: #1a202c;
@@ -111,7 +113,7 @@
         <div class="upload-section">
             <div class="pipeline-status">
                 <div class="pipeline-title">Data Pipeline</div>
-                <div id="status-indicator" class="status-indicator">🔄 Syncing data.json...</div>
+                <div id="status-indicator" class="status-indicator">🔄 Connecting to Supabase...</div>
             </div>
         </div>
     </div>
@@ -160,7 +162,7 @@
                     </tr>
                 </thead>
                 <tbody id="history-body">
-                    <tr><td colspan="7" style="text-align: center; color: #a0aec0;">Awaiting Pipeline Data...</td></tr>
+                    <tr><td colspan="7" style="text-align: center; color: #a0aec0;">Awaiting Database Sync...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -168,7 +170,7 @@
         <!-- Product Intelligence Tab -->
         <div id="intel-tab" class="tab-content">
             <h2 style="margin-top: 0;">Product Performance Matrix</h2>
-            <p style="color: #718096; font-size: 14px; margin-bottom: 25px;">Top sellers and market basket combinations pulled automatically from the pipeline.</p>
+            <p style="color: #718096; font-size: 14px; margin-bottom: 25px;">Top sellers and market basket combinations pulled automatically from the database.</p>
             
             <div class="chart-grid">
                 <div class="chart-container">
@@ -181,7 +183,7 @@
                     <h3 style="margin-top: 0; color: var(--intel);">Market Basket Analysis</h3>
                     <p style="font-size: 14px; color: #553c9a;">When customers buy multiple printables, these pairs are bought together most often:</p>
                     <ul id="basket-list" style="padding-left: 20px; line-height: 1.8; color: #44337a; font-size: 14px;">
-                        <li>Awaiting Pipeline Data...</li>
+                        <li>Awaiting Database Sync...</li>
                     </ul>
                 </div>
             </div>
@@ -196,7 +198,7 @@
                     </tr>
                 </thead>
                 <tbody id="product-body">
-                    <tr><td colspan="4" style="text-align: center; color: #a0aec0;">Awaiting Pipeline Data...</td></tr>
+                    <tr><td colspan="4" style="text-align: center; color: #a0aec0;">Awaiting Database Sync...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -209,7 +211,7 @@
                 <h3 style="margin-top: 0;">1. Purchasing Heatmap (Day of Week vs. Month)</h3>
                 <p style="color: #718096; font-size: 13px;">Identifies which days and months generate the most order volume.</p>
                 <div id="heatmap-container" class="heatmap-wrapper">
-                    <div style="text-align: center; color: #a0aec0; padding: 20px;">Awaiting Pipeline Data...</div>
+                    <div style="text-align: center; color: #a0aec0; padding: 20px;">Awaiting Database Sync...</div>
                 </div>
             </div>
 
@@ -235,7 +237,7 @@
                             </tr>
                         </thead>
                         <tbody id="leaderboard-body">
-                            <tr><td colspan="4" style="text-align: center; color: #a0aec0;">Awaiting Pipeline Data...</td></tr>
+                            <tr><td colspan="4" style="text-align: center; color: #a0aec0;">Awaiting Database Sync...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -342,6 +344,14 @@
     </div>
 
     <script>
+        // ==========================================
+        // 1. SUPABASE CONFIGURATION
+        // Replace these with your actual Supabase URL and Anon Key
+        // ==========================================
+        const SUPABASE_URL = 'https://woddxqmpbhguikibjusf.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_SGDxtM1_zTHrmGSYnuuRkw_pUClB66R';
+        const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         // Global Data States
         let historicalData = [];
         let productData = [];
@@ -369,366 +379,155 @@
             evt.currentTarget.classList.add("active");
         }
 
-        // Automatic Pipeline Fetch with Cache Buster
-    function fetchPipelineData() {
-        const cacheBuster = `data.json?v=${new Date().getTime()}`;
-        fetch(cacheBuster)
-            .then(response => {
-                if (!response.ok) throw new Error("data.json not found");
-                return response.json();
-            })
-            .then(data => {
-                document.getElementById('status-indicator').innerText = '✅ LIVE';
+        // ==========================================
+        // 2. FETCH DATA FROM SUPABASE
+        // ==========================================
+        async function fetchPipelineData() {
+            try {
+                // Concurrently query the relational tables
+                const [ledgerRes, ordersRes, itemsRes] = await Promise.all([
+                    db.from('financial_ledger').select('*').order('month', { ascending: true }),
+                    db.from('orders').select('*'),
+                    db.from('order_items').select('*')
+                ]);
+
+                if (ledgerRes.error) throw ledgerRes.error;
+                if (ordersRes.error) throw ordersRes.error;
+                if (itemsRes.error) throw itemsRes.error;
+
+                document.getElementById('status-indicator').innerText = '✅ LIVE (DB)';
                 document.getElementById('status-indicator').style.color = '#38a169';
-                processPipelinePayload(data);
-            })
-            .catch(error => {
-                console.warn("Pipeline pending:", error);
-                document.getElementById('status-indicator').innerText = '⚠️ Awaiting Pipeline Data';
+                
+                processDatabaseRecords(ledgerRes.data, ordersRes.data, itemsRes.data);
+
+            } catch (error) {
+                console.error("Database connection failed:", error);
+                document.getElementById('status-indicator').innerText = '⚠️ Database Error';
                 document.getElementById('status-indicator').style.color = '#e53e3e';
-            });
-    }
-
-    function processPipelinePayload(data) {
-        console.log("Raw Ingested Data:", data);
-            let monthlyData = {};
-            
-            // 1. Seed Financial Baseline
-            if (data.historical_months && Array.isArray(data.historical_months)) {
-                data.historical_months.forEach(m => {
-                    monthlyData[m.month] = { 
-                        month: m.month,
-                        orders: Number(m.orders) || 0,
-                        sales: Number(m.sales) || 0,
-                        fees: Number(m.fees) || 0,
-                        adFees: Number(m.adFees) || 0,
-                        refunds: Number(m.refunds) || 0,
-                        profit: Number(m.profit) || 0,
-                        isHistorical: true
-                    };
-                });
+                document.getElementById('history-body').innerHTML = `<tr><td colspan="7" style="text-align: center; color: #e53e3e;">Failed to load from Supabase: ${error.message}</td></tr>`;
             }
-
-            // 2. Seed Historical Products from CSV
-            let itemStats = {};
-            if (data.historical_products && Array.isArray(data.historical_products)) {
-                data.historical_products.forEach(p => {
-                    itemStats[p.title] = { title: p.title, qty: Number(p.qty) || 0, revenue: Number(p.revenue) || 0 };
-                });
-            }
-
-            // 3. Seed Historical Buyers
-            buyerLedger = {};
-            if (data.historical_buyers && Array.isArray(data.historical_buyers)) {
-                data.historical_buyers.forEach(b => {
-                    buyerLedger[b.id] = { 
-                        id: b.id, 
-                        orderIds: new Set(Array.from({length: b.orders || 1}, (_, i) => `hist-${b.id}-${i}`)), 
-                        spend: Number(b.spend) || 0 
-                    };
-                });
-            }
-
-            // 4. Seed Purchasing Heatmap
-            heatmapData = Array(7).fill().map(() => Array(12).fill(0));
-            if (data.historical_heatmap && Array.isArray(data.historical_heatmap)) {
-                for (let d = 0; d < 7; d++) {
-                    for (let m = 0; m < 12; m++) {
-                        heatmapData[d][m] = (data.historical_heatmap[d] && data.historical_heatmap[d][m]) || 0;
-                    }
-                }
-            }
-
-            // 5. Seed Price Tiers
-            priceTiers = { low: 0, mid: 0, high: 0 };
-            Object.values(itemStats).forEach(item => {
-                let avgPrice = item.qty > 0 ? item.revenue / item.qty : item.revenue;
-                if (avgPrice < 250) priceTiers.low += item.revenue;
-                else if (avgPrice <= 750) priceTiers.mid += item.revenue;
-                else priceTiers.high += item.revenue;
-            });
-
-            // 6. Ingest Live API Receipts
-            let results = data.results || [];
-            let liveBaskets = {};
-
-            results.forEach(receipt => {
-                let timestamp = receipt.created_timestamp || receipt.creation_tsz;
-                if (!timestamp) return;
-                
-                let d = new Date(timestamp * 1000);
-                let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                
-                if (!monthlyData[monthKey]) {
-                    monthlyData[monthKey] = { 
-                        month: monthKey, orders: 0, sales: 0, fees: 0, adFees: 0, refunds: 0, profit: 0, isHistorical: false 
-                    };
-                }
-
-                let amount = 0;
-                if (receipt.grandtotal) {
-                    amount = (receipt.grandtotal.amount || 0) / (receipt.grandtotal.divisor || 1);
-                }
-
-                if (!monthlyData[monthKey].isHistorical) {
-                    let transPercent = parseFloat(document.getElementById('fee-trans').value) || 6.5;
-                    let procPercent = parseFloat(document.getElementById('fee-proc').value) || 5;
-                    let fixedProc = parseFloat(document.getElementById('fee-proc-fixed').value) || 25;
-                    let listingFee = parseFloat(document.getElementById('fee-listing').value) || 18;
-                    let regPercent = parseFloat(document.getElementById('fee-reg').value) || 0.29;
-                    
-                    let estimatedFees = (amount * (transPercent / 100)) + (amount * (procPercent / 100)) + fixedProc + (amount * (regPercent / 100)) + listingFee;
-
-                    monthlyData[monthKey].orders += 1;
-                    monthlyData[monthKey].sales += amount;
-                    monthlyData[monthKey].fees -= estimatedFees;
-                }
-
-                let buyerName = receipt.name || receipt.buyer_email || "Etsy Buyer";
-                let cleanBuyer = String(buyerName).trim();
-                if (!buyerLedger[cleanBuyer]) buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
-                buyerLedger[cleanBuyer].orderIds.add(receipt.receipt_id);
-                buyerLedger[cleanBuyer].spend += amount;
-
-                heatmapData[d.getDay()][d.getMonth()] += 1;
-
-                if (receipt.transactions && Array.isArray(receipt.transactions)) {
-                    receipt.transactions.forEach(tx => {
-                        let itemName = tx.title || "Unknown Item";
-                        let qty = tx.quantity || 1;
-                        let price = tx.price ? ((tx.price.amount || 0) / (tx.price.divisor || 1)) : 0;
-                        let itemTotal = price * qty;
-                        let shortName = itemName.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
-
-                        if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
-                        itemStats[shortName].qty += qty;
-                        itemStats[shortName].revenue += itemTotal;
-
-                        if (!liveBaskets[receipt.receipt_id]) liveBaskets[receipt.receipt_id] = [];
-                        liveBaskets[receipt.receipt_id].push(shortName);
-
-                        if (itemTotal < 250) priceTiers.low += itemTotal;
-                        else if (itemTotal <= 750) priceTiers.mid += itemTotal;
-                        else priceTiers.high += itemTotal;
-                    });
-                }
-            });
-
-            // Compute Heatmap max
-            maxHeat = 0;
-            for (let d = 0; d < 7; d++) {
-                for (let m = 0; m < 12; m++) {
-                    if (heatmapData[d][m] > maxHeat) maxHeat = heatmapData[d][m];
-                }
-            }
-
-            // Merge Market Baskets
-            marketBasketPairs = data.historical_baskets ? [...data.historical_baskets] : [];
-            let pairCounts = {};
-            Object.values(liveBaskets).forEach(items => {
-                if (items.length > 1) {
-                    let uniqueItems = [...new Set(items)]; 
-                    for (let i = 0; i < uniqueItems.length; i++) {
-                        for (let j = i + 1; j < uniqueItems.length; j++) {
-                            let pair = [uniqueItems[i], uniqueItems[j]].sort().join(" + ");
-                            pairCounts[pair] = (pairCounts[pair] || 0) + 1;
-                        }
-                    }
-                }
-            });
-            Object.keys(pairCounts).forEach(pair => {
-                let existing = marketBasketPairs.find(p => p.pair === pair);
-                if (existing) existing.count += pairCounts[pair];
-                else marketBasketPairs.push({ pair: pair, count: pairCounts[pair] });
-            });
-            marketBasketPairs.sort((a, b) => b.count - a.count);
-
-            // Final state assignment
-            historicalData = Object.values(monthlyData).map(m => {
-                if (!m.isHistorical) m.profit = m.sales + m.fees + m.adFees + m.refunds;
-                return m;
-            }).sort((a, b) => a.month.localeCompare(b.month));
-
-            productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
-
-            // 7. Render All Tabs Unconditionally
-            refreshFinancialDashboard();
-            refreshProductDashboard();
-            refreshAdvancedDashboard();
-    }
-
-
-
-
-        // Parse Etsy JSON Structure with Injected Product & Customer Baseline
-            function processAPIReceipts(data) {
-            console.log("Raw Ingested Data:", data);
-            let monthlyData = {};
-            
-            // 1. Seed Financial Baseline
-            if (data.historical_months && Array.isArray(data.historical_months)) {
-                data.historical_months.forEach(m => {
-                    monthlyData[m.month] = { 
-                        month: m.month,
-                        orders: Number(m.orders) || 0,
-                        sales: Number(m.sales) || 0,
-                        fees: Number(m.fees) || 0,
-                        adFees: Number(m.adFees) || 0,
-                        refunds: Number(m.refunds) || 0,
-                        profit: Number(m.profit) || 0,
-                        isHistorical: true
-                    };
-                });
-            }
-
-            // 2. Seed Historical Products from CSV
-            let itemStats = {};
-            if (data.historical_products && Array.isArray(data.historical_products)) {
-                data.historical_products.forEach(p => {
-                    itemStats[p.title] = { title: p.title, qty: Number(p.qty) || 0, revenue: Number(p.revenue) || 0 };
-                });
-            }
-
-            // 3. Seed Historical Buyers
-            buyerLedger = {};
-            if (data.historical_buyers && Array.isArray(data.historical_buyers)) {
-                data.historical_buyers.forEach(b => {
-                    buyerLedger[b.id] = { 
-                        id: b.id, 
-                        orderIds: new Set(Array.from({length: b.orders || 1}, (_, i) => `hist-${b.id}-${i}`)), 
-                        spend: Number(b.spend) || 0 
-                    };
-                });
-            }
-
-            // 4. Seed Purchasing Heatmap
-            heatmapData = Array(7).fill().map(() => Array(12).fill(0));
-            if (data.historical_heatmap && Array.isArray(data.historical_heatmap)) {
-                for (let d = 0; d < 7; d++) {
-                    for (let m = 0; m < 12; m++) {
-                        heatmapData[d][m] = (data.historical_heatmap[d] && data.historical_heatmap[d][m]) || 0;
-                    }
-                }
-            }
-
-            // 5. Seed Price Tiers
-            priceTiers = { low: 0, mid: 0, high: 0 };
-            Object.values(itemStats).forEach(item => {
-                let avgPrice = item.qty > 0 ? item.revenue / item.qty : item.revenue;
-                if (avgPrice < 250) priceTiers.low += item.revenue;
-                else if (avgPrice <= 750) priceTiers.mid += item.revenue;
-                else priceTiers.high += item.revenue;
-            });
-
-            // 6. Ingest Live API Receipts
-            let results = data.results || [];
-            let liveBaskets = {};
-
-            results.forEach(receipt => {
-                let timestamp = receipt.created_timestamp || receipt.creation_tsz;
-                if (!timestamp) return;
-                
-                let d = new Date(timestamp * 1000);
-                let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                
-                if (!monthlyData[monthKey]) {
-                    monthlyData[monthKey] = { 
-                        month: monthKey, orders: 0, sales: 0, fees: 0, adFees: 0, refunds: 0, profit: 0, isHistorical: false 
-                    };
-                }
-
-                let amount = 0;
-                if (receipt.grandtotal) {
-                    amount = (receipt.grandtotal.amount || 0) / (receipt.grandtotal.divisor || 1);
-                }
-
-                if (!monthlyData[monthKey].isHistorical) {
-                    let transPercent = parseFloat(document.getElementById('fee-trans').value) || 6.5;
-                    let procPercent = parseFloat(document.getElementById('fee-proc').value) || 5;
-                    let fixedProc = parseFloat(document.getElementById('fee-proc-fixed').value) || 25;
-                    let listingFee = parseFloat(document.getElementById('fee-listing').value) || 18;
-                    let regPercent = parseFloat(document.getElementById('fee-reg').value) || 0.29;
-                    
-                    let estimatedFees = (amount * (transPercent / 100)) + (amount * (procPercent / 100)) + fixedProc + (amount * (regPercent / 100)) + listingFee;
-
-                    monthlyData[monthKey].orders += 1;
-                    monthlyData[monthKey].sales += amount;
-                    monthlyData[monthKey].fees -= estimatedFees;
-                }
-
-                let buyerName = receipt.name || receipt.buyer_email || "Etsy Buyer";
-                let cleanBuyer = String(buyerName).trim();
-                if (!buyerLedger[cleanBuyer]) buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
-                buyerLedger[cleanBuyer].orderIds.add(receipt.receipt_id);
-                buyerLedger[cleanBuyer].spend += amount;
-
-                heatmapData[d.getDay()][d.getMonth()] += 1;
-
-                if (receipt.transactions && Array.isArray(receipt.transactions)) {
-                    receipt.transactions.forEach(tx => {
-                        let itemName = tx.title || "Unknown Item";
-                        let qty = tx.quantity || 1;
-                        let price = tx.price ? ((tx.price.amount || 0) / (tx.price.divisor || 1)) : 0;
-                        let itemTotal = price * qty;
-                        let shortName = itemName.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
-
-                        if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
-                        itemStats[shortName].qty += qty;
-                        itemStats[shortName].revenue += itemTotal;
-
-                        if (!liveBaskets[receipt.receipt_id]) liveBaskets[receipt.receipt_id] = [];
-                        liveBaskets[receipt.receipt_id].push(shortName);
-
-                        if (itemTotal < 250) priceTiers.low += itemTotal;
-                        else if (itemTotal <= 750) priceTiers.mid += itemTotal;
-                        else priceTiers.high += itemTotal;
-                    });
-                }
-            });
-
-            // Compute Heatmap max
-            maxHeat = 0;
-            for (let d = 0; d < 7; d++) {
-                for (let m = 0; m < 12; m++) {
-                    if (heatmapData[d][m] > maxHeat) maxHeat = heatmapData[d][m];
-                }
-            }
-
-            // Merge Market Basket Analysis
-            marketBasketPairs = data.historical_baskets ? [...data.historical_baskets] : [];
-            let pairCounts = {};
-            Object.values(liveBaskets).forEach(items => {
-                if (items.length > 1) {
-                    let uniqueItems = [...new Set(items)]; 
-                    for (let i = 0; i < uniqueItems.length; i++) {
-                        for (let j = i + 1; j < uniqueItems.length; j++) {
-                            let pair = [uniqueItems[i], uniqueItems[j]].sort().join(" + ");
-                            pairCounts[pair] = (pairCounts[pair] || 0) + 1;
-                        }
-                    }
-                }
-            });
-            Object.keys(pairCounts).forEach(pair => {
-                let existing = marketBasketPairs.find(p => p.pair === pair);
-                if (existing) existing.count += pairCounts[pair];
-                else marketBasketPairs.push({ pair: pair, count: pairCounts[pair] });
-            });
-            marketBasketPairs.sort((a, b) => b.count - a.count);
-
-            // Final state assignment
-            historicalData = Object.values(monthlyData).map(m => {
-                if (!m.isHistorical) m.profit = m.sales + m.fees + m.adFees + m.refunds;
-                return m;
-            }).sort((a, b) => a.month.localeCompare(b.month));
-
-            productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
-
-            // 7. Render All Tabs Unconditionally
-            refreshFinancialDashboard();
-            refreshProductDashboard();
-            refreshAdvancedDashboard();
         }
 
+        // ==========================================
+        // 3. PROCESS RELATIONAL DATA
+        // ==========================================
+        function processDatabaseRecords(ledger, orders, items) {
+            let monthlyData = {};
+            let itemStats = {};
+            let orderBaskets = {};
+            
+            // Reset Advanced States
+            heatmapData = Array(7).fill().map(() => Array(12).fill(0));
+            maxHeat = 0;
+            priceTiers = { low: 0, mid: 0, high: 0 };
+            buyerLedger = {};
+
+            // 1. Seed Financial Ledger (Historical & Aggregated)
+            ledger.forEach(row => {
+                monthlyData[row.month] = { 
+                    month: row.month,
+                    orders: Number(row.orders) || 0,
+                    sales: Number(row.sales) || 0,
+                    fees: Number(row.fees) || 0,
+                    adFees: Number(row.ad_fees) || 0,
+                    refunds: Number(row.refunds) || 0,
+                    profit: Number(row.net_profit) || 0,
+                    isLedgerRow: true
+                };
+            });
+
+            // 2. Process Granular Orders for Live Calculation & Heatmaps
+            orders.forEach(order => {
+                let d = new Date(order.order_timestamp * 1000);
+                let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyData[monthKey]) {
+                    monthlyData[monthKey] = { 
+                        month: monthKey, 
+                        orders: 0, 
+                        sales: 0, 
+                        fees: 0, 
+                        adFees: 0, 
+                        refunds: 0, 
+                        profit: 0, 
+                        isLedgerRow: false 
+                    };
+                }
+
+                // Append financials only if this month is entirely generated from live data (not in ledger)
+                if (!monthlyData[monthKey].isLedgerRow) {
+                    let amount = Number(order.grandtotal) || 0;
+                    let estimatedFees = Number(order.estimated_fees) || 0;
+                    
+                    monthlyData[monthKey].orders += 1;
+                    monthlyData[monthKey].sales += amount;
+                    monthlyData[monthKey].fees -= estimatedFees; // Make negative for ledger UI
+                }
+
+                // Aggregate Buyer Records
+                let cleanBuyer = String(order.buyer_name || "Etsy Buyer").trim();
+                if (!buyerLedger[cleanBuyer]) {
+                    buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
+                }
+                buyerLedger[cleanBuyer].orderIds.add(order.receipt_id);
+                buyerLedger[cleanBuyer].spend += Number(order.grandtotal) || 0;
+
+                // Purchasing Heatmap Mapping
+                let day = order.day_of_week !== undefined ? order.day_of_week : d.getDay();
+                let month = order.month_index !== undefined ? order.month_index : d.getMonth();
+                heatmapData[day][month] += 1;
+                if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
+            });
+
+            // 3. Process Line Items for Product Matrix & Basket
+            items.forEach(item => {
+                let shortName = item.item_title.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
+                let qty = Number(item.quantity) || 1;
+                let itemTotal = Number(item.item_total) || 0;
+
+                if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
+                itemStats[shortName].qty += qty;
+                itemStats[shortName].revenue += itemTotal;
+
+                if (!orderBaskets[item.receipt_id]) orderBaskets[item.receipt_id] = [];
+                orderBaskets[item.receipt_id].push(shortName);
+
+                if (itemTotal < 250) priceTiers.low += itemTotal;
+                else if (itemTotal <= 750) priceTiers.mid += itemTotal;
+                else priceTiers.high += itemTotal;
+            });
+
+            // Compile UI Arrays
+            historicalData = Object.values(monthlyData).map(m => {
+                if (!m.isLedgerRow) {
+                    m.profit = m.sales + m.fees + m.adFees + m.refunds;
+                }
+                return m;
+            }).sort((a, b) => a.month.localeCompare(b.month));
+
+            productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
+
+            let pairCounts = {};
+            Object.values(orderBaskets).forEach(basketItems => {
+                if (basketItems.length > 1) {
+                    let uniqueItems = [...new Set(basketItems)]; 
+                    for (let i = 0; i < uniqueItems.length; i++) {
+                        for (let j = i + 1; j < uniqueItems.length; j++) {
+                            let pair = [uniqueItems[i], uniqueItems[j]].sort().join(" + ");
+                            pairCounts[pair] = (pairCounts[pair] || 0) + 1;
+                        }
+                    }
+                }
+            });
+
+            marketBasketPairs = Object.keys(pairCounts)
+                .map(pair => ({ pair: pair, count: pairCounts[pair] }))
+                .sort((a, b) => b.count - a.count).slice(0, 5);
+
+            refreshFinancialDashboard();
+            if (productData.length > 0) refreshProductDashboard();
+            refreshAdvancedDashboard();
+        }
 
         function refreshFinancialDashboard() {
             let tOrders = 0, tSales = 0, tFees = 0, tAds = 0, tRefunds = 0, tProfit = 0;
@@ -813,7 +612,6 @@
         }
 
         function refreshAdvancedDashboard() {
-            // Heatmap
             const heatContainer = document.getElementById('heatmap-container');
             heatContainer.innerHTML = '';
             
@@ -871,7 +669,6 @@
                 heatContainer.appendChild(rowDiv);
             });
 
-            // Leaderboard
             let topBuyers = Object.values(buyerLedger)
                 .map(b => ({ id: b.id, orders: b.orderIds.size, spend: b.spend }))
                 .filter(b => b.orders > 1) 
@@ -890,7 +687,6 @@
                 });
             }
 
-            // Price Tier
             if (chartTier) chartTier.destroy();
             chartTier = new Chart(document.getElementById('tierDoughnut').getContext('2d'), {
                 type: 'doughnut',
