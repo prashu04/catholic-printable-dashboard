@@ -438,7 +438,22 @@
 
             // 2. Process Granular Orders for Live Calculation & Heatmaps
             orders.forEach(order => {
-                let d = new Date(order.order_timestamp * 1000);
+                let rawTs = order.order_timestamp;
+                let d;
+
+                // Handle 10-digit Unix seconds vs 13-digit milliseconds vs ISO strings
+                if (typeof rawTs === 'number') {
+                    d = new Date(rawTs < 10000000000 ? rawTs * 1000 : rawTs);
+                } else if (typeof rawTs === 'string' && /^\d+$/.test(rawTs)) {
+                    let numTs = Number(rawTs);
+                    d = new Date(numTs < 10000000000 ? numTs * 1000 : numTs);
+                } else {
+                    d = new Date(rawTs);
+                }
+
+                // Skip corrupted records if the date is invalid
+                if (isNaN(d.getTime())) return;
+
                 let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                 
                 if (!monthlyData[monthKey]) {
