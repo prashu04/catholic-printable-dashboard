@@ -346,7 +346,6 @@
     <script>
         // ==========================================
         // 1. SUPABASE CONFIGURATION
-        // Replace these with your actual Supabase URL and Anon Key
         // ==========================================
         const SUPABASE_URL = 'https://woddxqmpbhguikibjusf.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_SGDxtM1_zTHrmGSYnuuRkw_pUClB66R';
@@ -384,7 +383,6 @@
         // ==========================================
         async function fetchPipelineData() {
             try {
-                // Concurrently query the relational tables
                 const [ledgerRes, ordersRes, itemsRes] = await Promise.all([
                     db.from('financial_ledger').select('*').order('month', { ascending: true }),
                     db.from('orders').select('*'),
@@ -416,13 +414,12 @@
             let itemStats = {};
             let orderBaskets = {};
             
-            // Reset Advanced States
             heatmapData = Array(7).fill().map(() => Array(12).fill(0));
             maxHeat = 0;
             priceTiers = { low: 0, mid: 0, high: 0 };
             buyerLedger = {};
 
-            // 1. Seed Financial Ledger (Historical & Aggregated)
+            // 1. Seed Financial Ledger
             ledger.forEach(row => {
                 monthlyData[row.month] = { 
                     month: row.month,
@@ -436,12 +433,18 @@
                 };
             });
 
-            // 2. Process Granular Orders for Live Calculation & Heatmaps
+            // Set IST Timezone Formatter
+            let istFormatter = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Kolkata',
+                year: 'numeric',
+                month: '2-digit'
+            });
+
+            // 2. Process Granular Orders with Strict IST Parsing
             orders.forEach(order => {
                 let rawTs = order.order_timestamp;
                 let d;
 
-                // Handle 10-digit Unix seconds vs 13-digit milliseconds vs ISO strings
                 if (typeof rawTs === 'number') {
                     d = new Date(rawTs < 10000000000 ? rawTs * 1000 : rawTs);
                 } else if (typeof rawTs === 'string' && /^\d+$/.test(rawTs)) {
@@ -451,10 +454,10 @@
                     d = new Date(rawTs);
                 }
 
-                // Skip corrupted records if the date is invalid
                 if (isNaN(d.getTime())) return;
 
-                let monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                // Force mapping to IST to prevent late-day boundary shifting
+                let monthKey = istFormatter.format(d).substring(0, 7);
                 
                 if (!monthlyData[monthKey]) {
                     monthlyData[monthKey] = { 
@@ -469,17 +472,15 @@
                     };
                 }
 
-                // Append financials only if this month is entirely generated from live data (not in ledger)
                 if (!monthlyData[monthKey].isLedgerRow) {
                     let amount = Number(order.grandtotal) || 0;
                     let estimatedFees = Number(order.estimated_fees) || 0;
                     
                     monthlyData[monthKey].orders += 1;
                     monthlyData[monthKey].sales += amount;
-                    monthlyData[monthKey].fees -= estimatedFees; // Make negative for ledger UI
+                    monthlyData[monthKey].fees -= estimatedFees; 
                 }
 
-                // Aggregate Buyer Records
                 let cleanBuyer = String(order.buyer_name || "Etsy Buyer").trim();
                 if (!buyerLedger[cleanBuyer]) {
                     buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
@@ -487,14 +488,13 @@
                 buyerLedger[cleanBuyer].orderIds.add(order.receipt_id);
                 buyerLedger[cleanBuyer].spend += Number(order.grandtotal) || 0;
 
-                // Purchasing Heatmap Mapping
                 let day = order.day_of_week !== undefined ? order.day_of_week : d.getDay();
                 let month = order.month_index !== undefined ? order.month_index : d.getMonth();
                 heatmapData[day][month] += 1;
                 if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
             });
 
-            // 3. Process Line Items for Product Matrix & Basket
+            // 3. Process Line Items
             items.forEach(item => {
                 let shortName = item.item_title.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
                 let qty = Number(item.quantity) || 1;
