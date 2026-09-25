@@ -440,8 +440,23 @@
                 month: '2-digit'
             });
 
-            // 2. Process Granular Orders with Strict IST Parsing
+            // 2. Process Granular Orders with Strict IST Parsing & Deduplication
+            let seenReceipts = new Set();
+            let diagnosticSeptemberOrders = [];
+
             orders.forEach(order => {
+                // Safeguard against duplicate rows in the orders table
+                if (order.receipt_id) {
+                    if (seenReceipts.has(order.receipt_id)) return;
+                    seenReceipts.add(order.receipt_id);
+                }
+
+                // Filter out canceled or unpaid receipts if status field exists
+                let status = String(order.status || '').toLowerCase();
+                if (status === 'canceled' || status === 'cancelled' || status === 'unpaid') {
+                    return;
+                }
+
                 let rawTs = order.order_timestamp;
                 let d;
 
@@ -456,9 +471,20 @@
 
                 if (isNaN(d.getTime())) return;
 
-                // Force mapping to IST to prevent late-day boundary shifting
+                // Force mapping to IST to match Etsy Shop Manager
                 let monthKey = istFormatter.format(d).substring(0, 7);
                 
+                // Diagnostic Collector for September
+                if (monthKey === '2026-09') {
+                    diagnosticSeptemberOrders.push({
+                        receipt_id: order.receipt_id,
+                        ist_time: istFormatter.format(d),
+                        raw_timestamp: rawTs,
+                        buyer: order.buyer_name,
+                        amount: order.grandtotal
+                    });
+                }
+
                 if (!monthlyData[monthKey]) {
                     monthlyData[monthKey] = { 
                         month: monthKey, 
@@ -493,6 +519,10 @@
                 heatmapData[day][month] += 1;
                 if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
             });
+
+            // Diagnostic Output in Browser Console
+            console.log(`%c[September 2026 Audit] Total Parsed Orders: ${diagnosticSeptemberOrders.length}`, 'color: #2b6cb0; font-weight: bold; font-size: 14px;');
+            console.table(diagnosticSeptemberOrders);
 
             // 3. Process Line Items
             items.forEach(item => {
