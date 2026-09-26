@@ -8,6 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Supabase SDK for Serverless Database -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- PapaParse for Browser-side CSV Ingestion -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
         :root {
             --sidebar-bg: #1a202c;
@@ -67,7 +69,10 @@
         .upload-section { padding: 20px 10px; margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
         .pipeline-status { background: #2d3748; padding: 15px; border-radius: 6px; text-align: center; border: 1px solid #4a5568; }
         .pipeline-title { font-size: 11px; color: #a0aec0; text-transform: uppercase; font-weight: bold; margin-bottom: 5px; }
-        .status-indicator { color: #d69e2e; font-weight: bold; font-size: 14px; }
+        .status-indicator { color: #d69e2e; font-weight: bold; font-size: 14px; margin-bottom: 15px; }
+
+        .csv-upload-btn { display: block; background: var(--success); color: white; text-align: center; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s; }
+        .csv-upload-btn:hover { background: #2f855a; }
 
         /* Advanced Analytics */
         .heatmap-wrapper { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; }
@@ -114,6 +119,10 @@
             <div class="pipeline-status">
                 <div class="pipeline-title">Data Pipeline</div>
                 <div id="status-indicator" class="status-indicator">🔄 Connecting to Supabase...</div>
+                
+                <!-- New Upload Interface -->
+                <label for="csvUpload" class="csv-upload-btn">Upload Statement CSV</label>
+                <input type="file" id="csvUpload" accept=".csv" style="display: none;" onchange="handleFileUpload(event)">
             </div>
         </div>
     </div>
@@ -379,7 +388,111 @@
         }
 
         // ==========================================
-        // 2. FETCH DATA FROM SUPABASE
+        // 2. CSV INGESTION & IDEMPOTENT UPSERT
+        // ==========================================
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('status-indicator').innerText = '🔄 Parsing CSV...';
+            document.getElementById('status-indicator').style.color = '#d69e2e';
+
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processAndUpsertStatement(results.data);
+                }
+            });
+        }
+
+        async function processAndUpsertStatement(rawData) {
+            let monthlyData = {};
+
+            const cleanNumber = (val) => {
+                if (val === undefined || val === null) return 0;
+                if (typeof val === 'number') return val;
+                const cleaned = String(val).replace(/[^0-9.-]+/g, ""); 
+                return parseFloat(cleaned) || 0;
+            };
+
+            const getValue = (row, possibleKeys) => {
+                for (let key of Object.keys(row)) {
+                    if (possibleKeys.includes(key.trim())) {
+                        return row[key];
+                    }
+                }
+                return undefined;
+            };
+
+            rawData.forEach(row => {
+                let rawDate = getValue(row, ['Date', 'Sale Date']);
+                let type = String(getValue(row, ['Type']) || '').toLowerCase();
+                let amount = cleanNumber(getValue(row, ['Amount', 'Net', 'Order Net']));
+                let fees = cleanNumber(getValue(row, ['Fees & Taxes', 'Fees', 'Taxes']));
+
+                if (rawDate) {
+                    let dateObj = new Date(rawDate);
+                    if (!isNaN(dateObj.getTime())) {
+                        let monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+
+                        if (!monthlyData[monthKey]) {
+                            monthlyData[monthKey] = { month: monthKey, orders: 0, sales: 0, fees: 0, ad_fees: 0, refunds: 0, net_profit: 0 };
+                        }
+
+                        if (type === 'sale' || type === 'order') {
+                            monthlyData[monthKey].orders += 1;
+                            monthlyData[monthKey].sales += amount;
+                        } else if (type === 'refund') {
+                            monthlyData[monthKey].refunds += amount;
+                        } else if (type.includes('marketing') || type.includes('ad')) {
+                            monthlyData[monthKey].ad_fees += amount;
+                        } else if (type === 'deposit') {
+                            // Ignored to avoid revenue duplication
+                        } else {
+                            if (amount > 0) monthlyData[monthKey].sales += amount;
+                        }
+                        
+                        monthlyData[monthKey].fees += fees;
+                    }
+                }
+            });
+
+            // Calculate final net profit per month and format for Supabase
+            let upsertArray = Object.values(monthlyData).map(m => {
+                m.net_profit = m.sales + m.fees + m.ad_fees + m.refunds;
+                return m;
+            });
+
+            if (upsertArray.length === 0) {
+                alert("No valid data found in CSV.");
+                document.getElementById('status-indicator').innerText = '✅ LIVE (DB)';
+                document.getElementById('status-indicator').style.color = '#38a169';
+                return;
+            }
+
+            document.getElementById('status-indicator').innerText = '🔄 Syncing to Supabase...';
+            
+            // Execute the Upsert to gracefully overwrite current month data
+            const { data, error } = await db
+                .from('financial_ledger')
+                .upsert(upsertArray, { onConflict: 'month' });
+
+            if (error) {
+                console.error("Upsert failed:", error);
+                document.getElementById('status-indicator').innerText = '⚠️ Upload Failed';
+                document.getElementById('status-indicator').style.color = '#e53e3e';
+                alert("Failed to save to database: " + error.message);
+            } else {
+                alert("CSV Data successfully uploaded and synced to Supabase!");
+                // Trigger a full pipeline refresh to reflect the newly uploaded records
+                fetchPipelineData(); 
+            }
+        }
+
+        // ==========================================
+        // 3. FETCH DATA FROM SUPABASE
         // ==========================================
         async function fetchPipelineData() {
             try {
@@ -407,7 +520,7 @@
         }
 
         // ==========================================
-        // 3. PROCESS RELATIONAL DATA
+        // 4. PROCESS RELATIONAL DATA
         // ==========================================
         function processDatabaseRecords(ledger, orders, items) {
             let monthlyData = {};
@@ -435,7 +548,6 @@
 
             // Set IST Timezone Formatter
             let istFormatter = new Intl.DateTimeFormat('en-CA', {
-                //timeZone: 'Asia/Kolkata',
                 timeZone: 'America/New_York',
                 year: 'numeric',
                 month: '2-digit'
@@ -446,13 +558,11 @@
             let diagnosticSeptemberOrders = [];
 
             orders.forEach(order => {
-                // Safeguard against duplicate rows in the orders table
                 if (order.receipt_id) {
                     if (seenReceipts.has(order.receipt_id)) return;
                     seenReceipts.add(order.receipt_id);
                 }
 
-                // Filter out canceled or unpaid receipts if status field exists
                 let status = String(order.status || '').toLowerCase();
                 if (status === 'canceled' || status === 'cancelled' || status === 'unpaid') {
                     return;
@@ -472,10 +582,8 @@
 
                 if (isNaN(d.getTime())) return;
 
-                // Force mapping to IST to match Etsy Shop Manager
                 let monthKey = istFormatter.format(d).substring(0, 7);
                 
-                // Diagnostic Collector for September
                 if (monthKey === '2026-09') {
                     diagnosticSeptemberOrders.push({
                         receipt_id: order.receipt_id,
@@ -521,9 +629,7 @@
                 if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
             });
 
-            // Diagnostic Output in Browser Console
             console.log(`%c[September 2026 Audit] Total Parsed Orders: ${diagnosticSeptemberOrders.length}`, 'color: #2b6cb0; font-weight: bold; font-size: 14px;');
-            console.table(diagnosticSeptemberOrders);
 
             // 3. Process Line Items
             items.forEach(item => {
