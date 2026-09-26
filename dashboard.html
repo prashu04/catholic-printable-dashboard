@@ -433,18 +433,12 @@
                 };
             });
 
-            // Set IST Timezone Formatter - RESTORED TO ASIA/KOLKATA
+            // Set IST Timezone Formatter
             let istFormatter = new Intl.DateTimeFormat('en-CA', {
-                timeZone: 'Asia/Kolkata',
+                //timeZone: 'Asia/Kolkata',
+                timeZone: 'America/New_York',
                 year: 'numeric',
                 month: '2-digit'
-            });
-
-            // Pre-calculate True Gross Sales per receipt (Tax-Exclusive Subtotals)
-            let receiptSubtotals = {};
-            items.forEach(item => {
-                if (!receiptSubtotals[item.receipt_id]) receiptSubtotals[item.receipt_id] = 0;
-                receiptSubtotals[item.receipt_id] += Number(item.item_total) || 0;
             });
 
             // 2. Process Granular Orders with Strict IST Parsing & Deduplication
@@ -481,9 +475,6 @@
                 // Force mapping to IST to match Etsy Shop Manager
                 let monthKey = istFormatter.format(d).substring(0, 7);
                 
-                // Fetch the tax-exclusive total if available, fallback to grandtotal
-                let taxExclusiveAmount = receiptSubtotals[order.receipt_id] || Number(order.grandtotal) || 0;
-
                 // Diagnostic Collector for September
                 if (monthKey === '2026-09') {
                     diagnosticSeptemberOrders.push({
@@ -491,7 +482,7 @@
                         ist_time: istFormatter.format(d),
                         raw_timestamp: rawTs,
                         buyer: order.buyer_name,
-                        amount: taxExclusiveAmount // Showing true item revenue
+                        amount: order.grandtotal
                     });
                 }
 
@@ -509,10 +500,11 @@
                 }
 
                 if (!monthlyData[monthKey].isLedgerRow) {
+                    let amount = Number(order.grandtotal) || 0;
                     let estimatedFees = Number(order.estimated_fees) || 0;
                     
                     monthlyData[monthKey].orders += 1;
-                    monthlyData[monthKey].sales += taxExclusiveAmount;
+                    monthlyData[monthKey].sales += amount;
                     monthlyData[monthKey].fees -= estimatedFees; 
                 }
 
@@ -521,7 +513,7 @@
                     buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
                 }
                 buyerLedger[cleanBuyer].orderIds.add(order.receipt_id);
-                buyerLedger[cleanBuyer].spend += taxExclusiveAmount;
+                buyerLedger[cleanBuyer].spend += Number(order.grandtotal) || 0;
 
                 let day = order.day_of_week !== undefined ? order.day_of_week : d.getDay();
                 let month = order.month_index !== undefined ? order.month_index : d.getMonth();
