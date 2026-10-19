@@ -29,10 +29,90 @@
         .user-greeting { text-align: center; font-size: 13px; color: #a0aec0; margin-bottom: 25px; }
         .tab-btn { background: none; border: none; color: #a0aec0; padding: 15px 20px; text-align: left; font-size: 15px; cursor: pointer; transition: 0.3s; border-left: 4px solid transparent; }
         .tab-btn:hover, .tab-btn.active { background-color: #2d3748; color: white; border-left: 4px solid var(--accent); }
-        .main-content { flex-grow: 1; padding: 30px; overflow-y: auto; }
+        .main-content { flex-grow: 1; padding: 25px 30px; overflow-y: auto; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         
+        /* Universal Date Filter Bar */
+        .global-filter-bar {
+            background: var(--card-bg);
+            padding: 14px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            margin-bottom: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            border-left: 4px solid var(--accent);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .filter-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .filter-label {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #4a5568;
+            margin-right: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .preset-btn {
+            background: #edf2f7;
+            border: 1px solid #cbd5e0;
+            color: #4a5568;
+            padding: 6px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover {
+            background: #e2e8f0;
+            color: #1a202c;
+        }
+        .preset-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+        .filter-custom {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        .filter-custom input[type="month"] {
+            padding: 5px 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 5px;
+            font-size: 13px;
+            color: var(--text-main);
+            font-family: inherit;
+            background: #f7fafc;
+        }
+        .filter-badge {
+            font-size: 11px;
+            background: #ebf8fa;
+            color: #2b6cb0;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 700;
+            border: 1px solid #bee3f8;
+        }
+
         /* Grids and Cards */
         .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
         .kpi-card { background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 3px solid var(--accent); }
@@ -120,7 +200,7 @@
                 <div class="pipeline-title">Data Pipeline</div>
                 <div id="status-indicator" class="status-indicator">🔄 Connecting to Supabase...</div>
                 
-                <!-- New Upload Interface -->
+                <!-- Upload Interface -->
                 <label for="csvUpload" class="csv-upload-btn">Upload Statement CSV</label>
                 <input type="file" id="csvUpload" accept=".csv" style="display: none;" onchange="handleFileUpload(event)">
             </div>
@@ -129,6 +209,27 @@
 
     <div class="main-content">
         
+        <!-- UNIVERSAL DATE FILTER BAR -->
+        <div class="global-filter-bar" id="global-filter-bar">
+            <div class="filter-presets">
+                <span class="filter-label">📅 Universal Filter:</span>
+                <button class="preset-btn active" onclick="applyDatePreset('all', event)">All Time</button>
+                <button class="preset-btn" onclick="applyDatePreset('this-month', event)">This Month</button>
+                <button class="preset-btn" onclick="applyDatePreset('last-month', event)">Last Month</button>
+                <button class="preset-btn" onclick="applyDatePreset('last-3', event)">Last 3 Months</button>
+                <button class="preset-btn" onclick="applyDatePreset('last-6', event)">Last 6 Months</button>
+                <button class="preset-btn" onclick="applyDatePreset('this-year', event)">This Year</button>
+                <button class="preset-btn" onclick="applyDatePreset('last-year', event)">Last Year</button>
+            </div>
+            <div class="filter-custom">
+                <span>Range:</span>
+                <input type="month" id="filter-start" onchange="applyCustomDateRange()">
+                <span>to</span>
+                <input type="month" id="filter-end" onchange="applyCustomDateRange()">
+                <span id="active-range-badge" class="filter-badge">All History</span>
+            </div>
+        </div>
+
         <!-- Executive Dashboard Tab -->
         <div id="dashboard-tab" class="tab-content active">
             <h2 style="margin-top: 0;">Global KPIs</h2>
@@ -157,7 +258,7 @@
         <!-- Historical Performance Tab -->
         <div id="history-tab" class="tab-content">
             <h2 style="margin-top: 0;">Month-Over-Month Ledger</h2>
-            <p style="color: #718096; font-size: 14px;">Evaluate your shop's financial trajectory. Newest data is displayed first.</p>
+            <p style="color: #718096; font-size: 14px;">Evaluate your shop's financial trajectory for the selected period. Newest data is displayed first.</p>
             <table>
                 <thead>
                     <tr>
@@ -179,7 +280,7 @@
         <!-- Product Intelligence Tab -->
         <div id="intel-tab" class="tab-content">
             <h2 style="margin-top: 0;">Product Performance Matrix</h2>
-            <p style="color: #718096; font-size: 14px; margin-bottom: 25px;">Top sellers and market basket combinations pulled automatically from the database.</p>
+            <p style="color: #718096; font-size: 14px; margin-bottom: 25px;">Top sellers and market basket combinations filtered dynamically by your selected date range.</p>
             
             <div class="chart-grid">
                 <div class="chart-container">
@@ -190,7 +291,7 @@
                 </div>
                 <div class="chart-container" style="background: #faf5ff; border: 1px solid #d6bcfa;">
                     <h3 style="margin-top: 0; color: var(--intel);">Market Basket Analysis</h3>
-                    <p style="font-size: 14px; color: #553c9a;">When customers buy multiple printables, these pairs are bought together most often:</p>
+                    <p style="font-size: 14px; color: #553c9a;">When customers buy multiple printables in this period, these pairs are bought together most often:</p>
                     <ul id="basket-list" style="padding-left: 20px; line-height: 1.8; color: #44337a; font-size: 14px;">
                         <li>Awaiting Database Sync...</li>
                     </ul>
@@ -218,7 +319,7 @@
             
             <div class="chart-container">
                 <h3 style="margin-top: 0;">1. Purchasing Heatmap (Day of Week vs. Month)</h3>
-                <p style="color: #718096; font-size: 13px;">Identifies which days and months generate the most order volume.</p>
+                <p style="color: #718096; font-size: 13px;">Identifies which days and months generate the most order volume within the selected period.</p>
                 <div id="heatmap-container" class="heatmap-wrapper">
                     <div style="text-align: center; color: #a0aec0; padding: 20px;">Awaiting Database Sync...</div>
                 </div>
@@ -227,7 +328,7 @@
             <div class="chart-grid">
                 <div class="chart-container">
                     <h3 style="margin-top: 0;">2. Revenue by Price Tier</h3>
-                    <p style="font-size: 13px; color: #718096;">Breakdown of Low, Mid, and High-ticket sales contribution.</p>
+                    <p style="font-size: 13px; color: #718096;">Breakdown of Low, Mid, and High-ticket sales contribution in the selected period.</p>
                     <div style="height: 250px; display: flex; justify-content: center;">
                         <canvas id="tierDoughnut"></canvas>
                     </div>
@@ -235,14 +336,14 @@
                 
                 <div class="chart-container">
                     <h3 style="margin-top: 0;">3. Repeat Purchaser Leaderboard</h3>
-                    <p style="font-size: 13px; color: #718096;">Top loyal patrons identified across all orders.</p>
+                    <p style="font-size: 13px; color: #718096;">Top loyal patrons identified within the selected date window.</p>
                     <table style="margin-top: 10px;">
                         <thead>
                             <tr>
                                 <th>Rank</th>
                                 <th>Buyer Name</th>
                                 <th>Orders</th>
-                                <th>Lifetime Spend (₹)</th>
+                                <th>Period Spend (₹)</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboard-body">
@@ -354,13 +455,22 @@
 
     <script>
         // ==========================================
-        // 1. SUPABASE CONFIGURATION
+        // 1. SUPABASE CONFIGURATION & GLOBAL STATE
         // ==========================================
         const SUPABASE_URL = 'https://woddxqmpbhguikibjusf.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_SGDxtM1_zTHrmGSYnuuRkw_pUClB66R';
         const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // Global Data States
+        // Cached Raw Database Tables for Instant Filtering
+        let rawLedger = [];
+        let rawOrders = [];
+        let rawItems = [];
+
+        // Active Universal Date Filter Bounds ("YYYY-MM")
+        let filterStartMonth = null;
+        let filterEndMonth = null;
+
+        // Filtered UI States
         let historicalData = [];
         let productData = [];
         let marketBasketPairs = [];
@@ -377,6 +487,13 @@
         let chartProduct = null;
         let chartTier = null;
 
+        // Consistent Timezone Formatter (Etsy Reporting Time)
+        const etsyFormatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: '2-digit'
+        });
+
         function switchTab(evt, tabName) {
             let i, tabcontent, tabbtns;
             tabcontent = document.getElementsByClassName("tab-content");
@@ -388,7 +505,100 @@
         }
 
         // ==========================================
-        // 2. CSV INGESTION & IDEMPOTENT UPSERT
+        // 2. UNIVERSAL DATE FILTER LOGIC
+        // ==========================================
+        function formatYYYYMM(dateObj) {
+            return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        function isMonthInFilter(monthStr) {
+            if (!monthStr) return false;
+            if (filterStartMonth && monthStr < filterStartMonth) return false;
+            if (filterEndMonth && monthStr > filterEndMonth) return false;
+            return true;
+        }
+
+        function applyDatePreset(preset, evt) {
+            if (evt) {
+                let btns = document.getElementsByClassName('preset-btn');
+                for (let b of btns) b.classList.remove('active');
+                evt.currentTarget.classList.add('active');
+            }
+
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth(); // 0-indexed
+
+            let start = null;
+            let end = null;
+            let label = "All History";
+
+            if (preset === 'all') {
+                start = null;
+                end = null;
+                label = "All History";
+            } else if (preset === 'this-month') {
+                start = formatYYYYMM(now);
+                end = start;
+                label = `This Month (${start})`;
+            } else if (preset === 'last-month') {
+                const lastM = new Date(currentYear, currentMonth - 1, 1);
+                start = formatYYYYMM(lastM);
+                end = start;
+                label = `Last Month (${start})`;
+            } else if (preset === 'last-3') {
+                const threeAgo = new Date(currentYear, currentMonth - 2, 1);
+                start = formatYYYYMM(threeAgo);
+                end = formatYYYYMM(now);
+                label = `${start} to ${end}`;
+            } else if (preset === 'last-6') {
+                const sixAgo = new Date(currentYear, currentMonth - 5, 1);
+                start = formatYYYYMM(sixAgo);
+                end = formatYYYYMM(now);
+                label = `${start} to ${end}`;
+            } else if (preset === 'this-year') {
+                start = `${currentYear}-01`;
+                end = `${currentYear}-12`;
+                label = `Year ${currentYear}`;
+            } else if (preset === 'last-year') {
+                start = `${currentYear - 1}-01`;
+                end = `${currentYear - 1}-12`;
+                label = `Year ${currentYear - 1}`;
+            }
+
+            filterStartMonth = start;
+            filterEndMonth = end;
+
+            document.getElementById('filter-start').value = start || '';
+            document.getElementById('filter-end').value = end || '';
+            document.getElementById('active-range-badge').innerText = label;
+
+            processDatabaseRecords(rawLedger, rawOrders, rawItems);
+        }
+
+        function applyCustomDateRange() {
+            let btns = document.getElementsByClassName('preset-btn');
+            for (let b of btns) b.classList.remove('active');
+
+            const startVal = document.getElementById('filter-start').value || null;
+            const endVal = document.getElementById('filter-end').value || null;
+
+            filterStartMonth = startVal;
+            filterEndMonth = endVal;
+
+            let label = "Custom Range";
+            if (startVal && endVal) label = `${startVal} to ${endVal}`;
+            else if (startVal) label = `From ${startVal}`;
+            else if (endVal) label = `Up to ${endVal}`;
+            else label = "All History";
+
+            document.getElementById('active-range-badge').innerText = label;
+
+            processDatabaseRecords(rawLedger, rawOrders, rawItems);
+        }
+
+        // ==========================================
+        // 3. CSV INGESTION & IDEMPOTENT UPSERT
         // ==========================================
         function handleFileUpload(event) {
             const file = event.target.files[0];
@@ -459,7 +669,6 @@
                 }
             });
 
-            // Calculate final net profit per month and format for Supabase
             let upsertArray = Object.values(monthlyData).map(m => {
                 m.net_profit = m.sales + m.fees + m.ad_fees + m.refunds;
                 return m;
@@ -474,7 +683,6 @@
 
             document.getElementById('status-indicator').innerText = '🔄 Syncing to Supabase...';
             
-            // Execute the Upsert to gracefully overwrite current month data
             const { data, error } = await db
                 .from('financial_ledger')
                 .upsert(upsertArray, { onConflict: 'month' });
@@ -486,13 +694,12 @@
                 alert("Failed to save to database: " + error.message);
             } else {
                 alert("CSV Data successfully uploaded and synced to Supabase!");
-                // Trigger a full pipeline refresh to reflect the newly uploaded records
                 fetchPipelineData(); 
             }
         }
 
         // ==========================================
-        // 3. FETCH DATA FROM SUPABASE
+        // 4. FETCH DATA FROM SUPABASE
         // ==========================================
         async function fetchPipelineData() {
             try {
@@ -509,7 +716,12 @@
                 document.getElementById('status-indicator').innerText = '✅ LIVE (DB)';
                 document.getElementById('status-indicator').style.color = '#38a169';
                 
-                processDatabaseRecords(ledgerRes.data, ordersRes.data, itemsRes.data);
+                // Cache raw records globally for instant universal date filtering
+                rawLedger = ledgerRes.data || [];
+                rawOrders = ordersRes.data || [];
+                rawItems = itemsRes.data || [];
+
+                processDatabaseRecords(rawLedger, rawOrders, rawItems);
 
             } catch (error) {
                 console.error("Database connection failed:", error);
@@ -520,8 +732,22 @@
         }
 
         // ==========================================
-        // 4. PROCESS RELATIONAL DATA
+        // 5. PROCESS & FILTER RELATIONAL DATA
         // ==========================================
+        function parseOrderTimestamp(rawTs) {
+            if (!rawTs) return null;
+            let d;
+            if (typeof rawTs === 'number') {
+                d = new Date(rawTs < 10000000000 ? rawTs * 1000 : rawTs);
+            } else if (typeof rawTs === 'string' && /^\d+\$/.test(rawTs)) {
+                let numTs = Number(rawTs);
+                d = new Date(numTs < 10000000000 ? numTs * 1000 : numTs);
+            } else {
+                d = new Date(rawTs);
+            }
+            return isNaN(d.getTime()) ? null : d;
+        }
+
         function processDatabaseRecords(ledger, orders, items) {
             let monthlyData = {};
             let itemStats = {};
@@ -532,8 +758,10 @@
             priceTiers = { low: 0, mid: 0, high: 0 };
             buyerLedger = {};
 
-            // 1. Seed Financial Ledger
+            // 1. Seed Financial Ledger (Filtered by Universal Date Search)
             ledger.forEach(row => {
+                if (!isMonthInFilter(row.month)) return;
+
                 monthlyData[row.month] = { 
                     month: row.month,
                     orders: Number(row.orders) || 0,
@@ -546,16 +774,9 @@
                 };
             });
 
-            // Set IST Timezone Formatter
-            let istFormatter = new Intl.DateTimeFormat('en-CA', {
-                timeZone: 'America/New_York',
-                year: 'numeric',
-                month: '2-digit'
-            });
-
-            // 2. Process Granular Orders with Strict IST Parsing & Deduplication
+            // 2. Process Granular Orders (Filtered by Universal Date Search)
             let seenReceipts = new Set();
-            let diagnosticSeptemberOrders = [];
+            let validFilteredReceipts = new Set();
 
             orders.forEach(order => {
                 if (order.receipt_id) {
@@ -568,30 +789,16 @@
                     return;
                 }
 
-                let rawTs = order.order_timestamp;
-                let d;
+                let d = parseOrderTimestamp(order.order_timestamp);
+                if (!d) return;
 
-                if (typeof rawTs === 'number') {
-                    d = new Date(rawTs < 10000000000 ? rawTs * 1000 : rawTs);
-                } else if (typeof rawTs === 'string' && /^\d+$/.test(rawTs)) {
-                    let numTs = Number(rawTs);
-                    d = new Date(numTs < 10000000000 ? numTs * 1000 : numTs);
-                } else {
-                    d = new Date(rawTs);
-                }
+                let monthKey = etsyFormatter.format(d).substring(0, 7);
 
-                if (isNaN(d.getTime())) return;
+                // Check Universal Date Filter
+                if (!isMonthInFilter(monthKey)) return;
 
-                let monthKey = istFormatter.format(d).substring(0, 7);
-                
-                if (monthKey === '2026-09') {
-                    diagnosticSeptemberOrders.push({
-                        receipt_id: order.receipt_id,
-                        ist_time: istFormatter.format(d),
-                        raw_timestamp: rawTs,
-                        buyer: order.buyer_name,
-                        amount: order.grandtotal
-                    });
+                if (order.receipt_id) {
+                    validFilteredReceipts.add(order.receipt_id);
                 }
 
                 if (!monthlyData[monthKey]) {
@@ -629,11 +836,14 @@
                 if (heatmapData[day][month] > maxHeat) maxHeat = heatmapData[day][month];
             });
 
-            console.log(`%c[September 2026 Audit] Total Parsed Orders: ${diagnosticSeptemberOrders.length}`, 'color: #2b6cb0; font-weight: bold; font-size: 14px;');
-
-            // 3. Process Line Items
+            // 3. Process Line Items (Linked to Filtered Orders)
             items.forEach(item => {
-                let shortName = item.item_title.replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
+                // Only include line items whose parent order falls within the active date range
+                if (item.receipt_id && !validFilteredReceipts.has(item.receipt_id)) {
+                    return;
+                }
+
+                let shortName = String(item.item_title || 'Digital Printable').replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
                 let qty = Number(item.quantity) || 1;
                 let itemTotal = Number(item.item_total) || 0;
 
@@ -676,8 +886,9 @@
                 .map(pair => ({ pair: pair, count: pairCounts[pair] }))
                 .sort((a, b) => b.count - a.count).slice(0, 5);
 
+            // Redraw All Tabs
             refreshFinancialDashboard();
-            if (productData.length > 0) refreshProductDashboard();
+            refreshProductDashboard();
             refreshAdvancedDashboard();
         }
 
@@ -721,26 +932,34 @@
 
             const tbody = document.getElementById('history-body');
             tbody.innerHTML = ''; 
-            [...historicalData].reverse().forEach(row => {
-                let tr = document.createElement('tr');
-                tr.innerHTML = `<td style="font-weight: 500;">${row.month}</td><td>${row.orders}</td><td>₹${row.sales.toFixed(2)}</td><td class="${row.fees < 0 ? 'text-red' : ''}">${row.fees.toFixed(2)}</td><td class="${row.adFees < 0 ? 'text-red' : ''}">${row.adFees.toFixed(2)}</td><td class="${row.refunds < 0 ? 'text-red' : ''}">${row.refunds.toFixed(2)}</td><td class="${row.profit >= 0 ? 'text-green' : 'text-red'}">₹${row.profit.toFixed(2)}</td>`;
-                tbody.appendChild(tr);
-            });
+            if (historicalData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #a0aec0;">No financial records found for the selected date range.</td></tr>`;
+            } else {
+                [...historicalData].reverse().forEach(row => {
+                    let tr = document.createElement('tr');
+                    tr.innerHTML = `<td style="font-weight: 500;">${row.month}</td><td>${row.orders}</td><td>₹${row.sales.toFixed(2)}</td><td class="${row.fees < 0 ? 'text-red' : ''}">${row.fees.toFixed(2)}</td><td class="${row.adFees < 0 ? 'text-red' : ''}">${row.adFees.toFixed(2)}</td><td class="${row.refunds < 0 ? 'text-red' : ''}">${row.refunds.toFixed(2)}</td><td class="${row.profit >= 0 ? 'text-green' : 'text-red'}">₹${row.profit.toFixed(2)}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
         }
 
         function refreshProductDashboard() {
             const tbody = document.getElementById('product-body');
             tbody.innerHTML = '';
-            productData.forEach((item, index) => {
-                let tr = document.createElement('tr');
-                tr.innerHTML = `<td style="font-weight: bold; color: #718096;">#${index + 1}</td><td style="font-weight: 500;">${item.title}</td><td>${item.qty} units</td><td class="text-green">₹${item.revenue.toFixed(2)}</td>`;
-                tbody.appendChild(tr);
-            });
+            if (productData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #a0aec0;">No product sales found for the selected date range.</td></tr>`;
+            } else {
+                productData.forEach((item, index) => {
+                    let tr = document.createElement('tr');
+                    tr.innerHTML = `<td style="font-weight: bold; color: #718096;">#${index + 1}</td><td style="font-weight: 500;">${item.title}</td><td>${item.qty} units</td><td class="text-green">₹${item.revenue.toFixed(2)}</td>`;
+                    tbody.appendChild(tr);
+                });
+            }
 
             const basketList = document.getElementById('basket-list');
             basketList.innerHTML = '';
             if (marketBasketPairs.length === 0) {
-                basketList.innerHTML = '<li>Not enough multi-item orders to establish pairs yet.</li>';
+                basketList.innerHTML = '<li>No multi-item order pairs found in this date range.</li>';
             } else {
                 marketBasketPairs.forEach(pair => {
                     let li = document.createElement('li');
@@ -797,7 +1016,7 @@
                     let cell = document.createElement('div');
                     cell.className = 'heat-cell';
                     
-                    let opacity = val === 0 ? 0 : Math.max(0.15, val / maxHeat);
+                    let opacity = (val === 0 || maxHeat === 0) ? 0 : Math.max(0.15, val / maxHeat);
                     cell.style.backgroundColor = `rgba(221, 107, 32, ${opacity})`;
 
                     cell.addEventListener('mouseover', (e) => {
@@ -830,7 +1049,7 @@
             const lBody = document.getElementById('leaderboard-body');
             lBody.innerHTML = '';
             if (topBuyers.length === 0) {
-                lBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: #a0aec0;">No repeat buyers established yet.</td></tr>`;
+                lBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: #a0aec0;">No repeat buyers found in the selected date range.</td></tr>`;
             } else {
                 topBuyers.forEach((b, idx) => {
                     let tr = document.createElement('tr');
