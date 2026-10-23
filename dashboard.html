@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Prashanth's Etsy Dashboard | Catholic Printable Co.</title>
-    <!-- Chart.js for visualizations -->
+    <!-- Chart.js & DataLabels Plugin for visualizations -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <!-- Supabase SDK for Serverless Database -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- PapaParse for Browser-side CSV Ingestion -->
@@ -491,8 +492,34 @@
             line-height: 1.1;
         }
 
+        .kpi-subtext {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            font-weight: 500;
+        }
+
         .text-green { color: var(--apple-green) !important; font-weight: 600; }
         .text-red { color: var(--apple-red) !important; font-weight: 600; }
+
+        .margin-pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pill-green {
+            background: var(--apple-green-light);
+            color: #1D8338;
+        }
+
+        .pill-red {
+            background: var(--apple-red-light);
+            color: var(--apple-red);
+        }
 
         /* ==========================================
            CHARTS & CONTAINERS
@@ -561,7 +588,7 @@
         }
 
         /* ==========================================
-           APPLE NATIVE TABLES
+           APPLE NATIVE & SCREENER QUARTERLY TABLES
            ========================================== */
         .table-responsive {
             width: 100%;
@@ -607,6 +634,45 @@
 
         tbody tr:last-child td {
             border-bottom: none;
+        }
+
+        /* Quarterly Results Screener-style Formatting */
+        .quarterly-table th,
+        .quarterly-table td {
+            text-align: right;
+            padding: 13px 18px;
+            white-space: nowrap;
+        }
+
+        .quarterly-table th:first-child,
+        .quarterly-table td:first-child {
+            text-align: left;
+            position: sticky;
+            left: 0;
+            background: var(--surface-card);
+            z-index: 5;
+            border-right: 1px solid var(--border-hairline);
+            min-width: 175px;
+        }
+
+        .quarterly-table th:first-child {
+            background: #F8F8FA;
+        }
+
+        .quarterly-row-highlight {
+            background-color: rgba(245, 245, 247, 0.55);
+            font-weight: 700;
+        }
+
+        .quarterly-row-highlight td:first-child {
+            background-color: #F8F8FA;
+            font-weight: 700;
+        }
+
+        .plus-symbol {
+            color: var(--apple-blue);
+            font-weight: 600;
+            margin-left: 3px;
         }
 
         /* ==========================================
@@ -839,7 +905,6 @@
                 display: flex;
             }
 
-            /* Convert Sidebar into iOS Floating Bottom Tab Bar */
             .sidebar {
                 position: fixed;
                 bottom: 0;
@@ -1069,7 +1134,7 @@
             <div id="dashboard-tab" class="tab-content active">
                 <div class="section-header">
                     <h2>Executive Summary</h2>
-                    <p>Real-time financial telemetry and order velocity across your Etsy storefront.</p>
+                    <p>Real-time financial telemetry, profit margins, and order velocity across your Etsy storefront.</p>
                 </div>
 
                 <div class="kpi-grid">
@@ -1086,7 +1151,7 @@
                         <div class="kpi-value text-green" id="kpi-profit">₹0</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-title">EBITDA Margin <span class="kpi-dot" style="background: var(--apple-teal);"></span></div>
+                        <div class="kpi-title">Profit Margin <span class="kpi-dot" style="background: var(--apple-teal);"></span></div>
                         <div class="kpi-value" id="kpi-margin">0%</div>
                     </div>
                     <div class="kpi-card">
@@ -1108,7 +1173,7 @@
                 </div>
 
                 <div class="chart-container">
-                    <h3>Sales vs. Fees vs. Net Profit (Month over Month)</h3>
+                    <h3>Sales vs. Fees vs. Net Profit & Profit Margin % (Month over Month)</h3>
                     <div class="canvas-wrapper" style="height: 320px;">
                         <canvas id="financialsChart"></canvas>
                     </div>
@@ -1116,17 +1181,17 @@
 
                 <div class="chart-container">
                     <h3>Monthly Order Volume</h3>
-                    <div class="canvas-wrapper" style="height: 260px;">
+                    <div class="canvas-wrapper" style="height: 275px;">
                         <canvas id="ordersChart"></canvas>
                     </div>
                 </div>
             </div>
 
-            <!-- 2. Historical Performance Tab -->
+            <!-- 2. Historical Performance Tab (Ledger) -->
             <div id="history-tab" class="tab-content">
                 <div class="section-header">
                     <h2>Month-Over-Month Ledger</h2>
-                    <p>Evaluate your shop's financial trajectory for the selected period. Newest data is displayed first.</p>
+                    <p>Evaluate your shop's financial trajectory and monthly profit percentage for the selected period. Newest data is displayed first.</p>
                 </div>
                 <div class="table-responsive">
                     <table>
@@ -1139,10 +1204,11 @@
                                 <th>Ad Fees (₹)</th>
                                 <th>Refunds (₹)</th>
                                 <th>Net Profit (₹)</th>
+                                <th>Profit Margin</th>
                             </tr>
                         </thead>
                         <tbody id="history-body">
-                            <tr><td colspan="7" style="text-align: center; color: var(--text-secondary);">Awaiting Database Sync...</td></tr>
+                            <tr><td colspan="8" style="text-align: center; color: var(--text-secondary);">Awaiting Database Sync...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1152,7 +1218,7 @@
             <div id="intel-tab" class="tab-content">
                 <div class="section-header">
                     <h2>Product Performance Matrix</h2>
-                    <p>Top sellers and market basket combinations filtered dynamically by your selected date range.</p>
+                    <p>Top sellers, unit profitability, and market basket combinations filtered dynamically by your selected date range.</p>
                 </div>
                 
                 <div class="chart-grid">
@@ -1179,24 +1245,81 @@
                                 <th>Item Title</th>
                                 <th>Quantity Sold</th>
                                 <th>Gross Revenue (₹)</th>
+                                <th>Net Profit (₹)</th>
+                                <th>Profit Margin</th>
                             </tr>
                         </thead>
                         <tbody id="product-body">
-                            <tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">Awaiting Database Sync...</td></tr>
+                            <tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">Awaiting Database Sync...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- 4. Advanced Analytics Tab -->
+            <!-- 4. Advanced Analytics & Investor Diligence Tab -->
             <div id="advanced-tab" class="tab-content">
                 <div class="section-header">
-                    <h2>Advanced Shop Analytics</h2>
-                    <p>Deep behavioral patterns across purchasing days, price tiers, and repeat customer cohorts.</p>
+                    <h2>Investor Diligence & Advanced Analytics</h2>
+                    <p>Quarterly financial statements, valuation telemetry, and behavioral cohorts designed for investor readiness.</p>
+                </div>
+
+                <!-- Investor Valuation Telemetry KPIs -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-title">Repeat Customer Rate <span class="kpi-dot" style="background: var(--apple-purple);"></span></div>
+                        <div class="kpi-value" id="inv-repeat-rate">0%</div>
+                        <div class="kpi-subtext" id="inv-repeat-sub">0 of 0 unique buyers</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Avg Customer LTV <span class="kpi-dot" style="background: var(--apple-green);"></span></div>
+                        <div class="kpi-value text-green" id="inv-ltv">₹0</div>
+                        <div class="kpi-subtext">Gross revenue per unique buyer</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Annualized Run-Rate <span class="kpi-dot" style="background: var(--apple-blue);"></span></div>
+                        <div class="kpi-value" id="inv-arr">₹0</div>
+                        <div class="kpi-subtext" id="inv-arr-sub">Profit Run-Rate: ₹0/yr</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Monthly Growth (CMGR) <span class="kpi-dot" style="background: var(--apple-orange);"></span></div>
+                        <div class="kpi-value" id="inv-cmgr">0%</div>
+                        <div class="kpi-subtext">Compound monthly sales growth</div>
+                    </div>
+                </div>
+
+                <!-- 1. Quarterly Results Table (Screener.in Institutional Style) -->
+                <div class="chart-container">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+                        <div>
+                            <h3>1. Quarterly Results</h3>
+                            <p style="color: var(--text-secondary); font-size: 13px; margin: 4px 0 0 0;">Consolidated Figures in ₹ (INR) — Institutional quarterly view of revenue, expenses, and operating margins.</p>
+                        </div>
+                        <span class="filter-badge" style="background: rgba(52, 199, 89, 0.12); color: #1D8338;">Investor View</span>
+                    </div>
+                    <div class="table-responsive" style="box-shadow: none; border: 1px solid var(--border-hairline); margin-top: 16px;">
+                        <table class="quarterly-table" id="quarterly-table">
+                            <thead id="quarterly-head">
+                                <tr><th>Metric</th><th>Awaiting Sync...</th></tr>
+                            </thead>
+                            <tbody id="quarterly-body">
+                                <tr><td colspan="2" style="text-align: center; color: var(--text-secondary);">Awaiting Database Sync...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 2. Cumulative Growth Trajectory Chart -->
+                <div class="chart-container">
+                    <h3>2. Cumulative Revenue & Net Profit Trajectory</h3>
+                    <p style="color: var(--text-secondary); font-size: 13px; margin: 4px 0 0 0;">Demonstrates compounding cash-flow generation and total value creation over time.</p>
+                    <div class="canvas-wrapper" style="height: 290px;">
+                        <canvas id="cumulativeChart"></canvas>
+                    </div>
                 </div>
                 
+                <!-- 3. Purchasing Heatmap -->
                 <div class="chart-container">
-                    <h3>1. Purchasing Heatmap (Day of Week vs. Month)</h3>
+                    <h3>3. Purchasing Heatmap (Day of Week vs. Month)</h3>
                     <p style="color: var(--text-secondary); font-size: 13px; margin: 4px 0 0 0;">Identifies which days and months generate the highest order density within the selected period.</p>
                     <div class="heatmap-scroll-container">
                         <div id="heatmap-container" class="heatmap-wrapper">
@@ -1207,7 +1330,7 @@
 
                 <div class="chart-grid">
                     <div class="chart-container" style="margin-bottom: 0;">
-                        <h3>2. Revenue by Price Tier</h3>
+                        <h3>4. Revenue by Price Tier</h3>
                         <p style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 0 0;">Breakdown of Low, Mid, and High-ticket sales contribution in the selected period.</p>
                         <div class="canvas-wrapper" style="height: 260px; display: flex; justify-content: center;">
                             <canvas id="tierDoughnut"></canvas>
@@ -1215,7 +1338,7 @@
                     </div>
                     
                     <div class="chart-container" style="margin-bottom: 0;">
-                        <h3>3. Repeat Purchaser Leaderboard</h3>
+                        <h3>5. Repeat Purchaser Leaderboard</h3>
                         <p style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 12px 0;">Top loyal patrons identified within the selected date window.</p>
                         <div class="table-responsive" style="box-shadow: none; border: 1px solid var(--border-hairline);">
                             <table style="min-width: 100%;">
@@ -1330,7 +1453,7 @@
                                 <span>Net Profit</span> <span id="out-profit">₹168.70</span>
                             </div>
                             <div class="result-row" style="margin-top: 8px; margin-bottom: 0;">
-                                <span style="color: var(--text-secondary); font-weight: 500;">Net Profit Margin</span>
+                                <span style="color: var(--text-secondary); font-weight: 500;">Profit Margin</span>
                                 <span id="out-margin" style="font-weight: 700; background: var(--apple-green-light); color: var(--apple-green); padding: 4px 10px; border-radius: 12px;">70.29%</span>
                             </div>
                         </div>
@@ -1351,7 +1474,7 @@
                                 <th>Selling Price (₹)</th>
                                 <th>Fees (₹)</th>
                                 <th>Profit (₹)</th>
-                                <th>Margin</th>
+                                <th>Profit Margin</th>
                                 <th>Verdict</th>
                             </tr>
                         </thead>
@@ -1370,6 +1493,31 @@
         Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif';
         Chart.defaults.color = '#86868B';
         Chart.defaults.scale.grid.color = 'rgba(0, 0, 0, 0.04)';
+
+        // ==========================================
+        // 0. NUMBER & CURRENCY COMMA FORMATTERS
+        // ==========================================
+        function fmtInt(val) {
+            let n = Math.round(Number(val) || 0);
+            return n.toLocaleString('en-US');
+        }
+
+        function fmtNum(val, decimals = 2) {
+            let n = Number(val) || 0;
+            return n.toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function fmtCurr(val, decimals = 2) {
+            let n = Number(val) || 0;
+            let sign = n < 0 ? '-' : '';
+            return sign + '₹' + Math.abs(n).toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
 
         // ==========================================
         // 1. SUPABASE CONFIGURATION & GLOBAL STATE
@@ -1403,6 +1551,7 @@
         let chartOrders = null;
         let chartProduct = null;
         let chartTier = null;
+        let chartCumulative = null;
 
         // Consistent Timezone Formatter (Etsy Reporting Time)
         const etsyFormatter = new Intl.DateTimeFormat('en-CA', {
@@ -1633,7 +1782,6 @@
                 document.getElementById('status-indicator').innerText = '✅ LIVE (DB)';
                 document.getElementById('status-indicator').style.color = '#34C759';
                 
-                // Cache raw records globally for instant universal date filtering
                 rawLedger = ledgerRes.data || [];
                 rawOrders = ordersRes.data || [];
                 rawItems = itemsRes.data || [];
@@ -1644,7 +1792,7 @@
                 console.error("Database connection failed:", error);
                 document.getElementById('status-indicator').innerText = '⚠️ Database Error';
                 document.getElementById('status-indicator').style.color = '#FF3B30';
-                document.getElementById('history-body').innerHTML = `<tr><td colspan="7" style="text-align: center; color: #FF3B30;">Failed to load from Supabase: ${error.message}</td></tr>`;
+                document.getElementById('history-body').innerHTML = `<tr><td colspan="8" style="text-align: center; color: #FF3B30;">Failed to load from Supabase: ${error.message}</td></tr>`;
             }
         }
 
@@ -1665,10 +1813,26 @@
             return isNaN(d.getTime()) ? null : d;
         }
 
+        // Unit Fee Estimator for Product Matrix Net Profit
+        function estimateProductFee(itemTotal, qty, receiptId, receiptMap) {
+            let listingFee = parseFloat(document.getElementById('fee-listing')?.value) || 18;
+            let transPercent = parseFloat(document.getElementById('fee-trans')?.value) || 6.5;
+            let procPercent = parseFloat(document.getElementById('fee-proc')?.value) || 5.0;
+            let fixedProc = parseFloat(document.getElementById('fee-proc-fixed')?.value) || 25;
+            let regPercent = parseFloat(document.getElementById('fee-reg')?.value) || 0.29;
+
+            if (receiptId && receiptMap[receiptId] && receiptMap[receiptId].grandtotal > 0 && receiptMap[receiptId].estimated_fees > 0) {
+                return (itemTotal / receiptMap[receiptId].grandtotal) * receiptMap[receiptId].estimated_fees;
+            }
+            let variableRate = (transPercent + procPercent + regPercent) / 100;
+            return (itemTotal * variableRate) + (listingFee * qty) + fixedProc;
+        }
+
         function processDatabaseRecords(ledger, orders, items) {
             let monthlyData = {};
             let itemStats = {};
             let orderBaskets = {};
+            let receiptMap = {};
             
             heatmapData = Array(7).fill().map(() => Array(12).fill(0));
             maxHeat = 0;
@@ -1711,11 +1875,17 @@
 
                 let monthKey = etsyFormatter.format(d).substring(0, 7);
 
-                // Check Universal Date Filter
                 if (!isMonthInFilter(monthKey)) return;
+
+                let amount = Number(order.grandtotal) || 0;
+                let estimatedFees = Number(order.estimated_fees) || 0;
 
                 if (order.receipt_id) {
                     validFilteredReceipts.add(order.receipt_id);
+                    receiptMap[order.receipt_id] = {
+                        grandtotal: amount,
+                        estimated_fees: estimatedFees
+                    };
                 }
 
                 if (!monthlyData[monthKey]) {
@@ -1732,9 +1902,6 @@
                 }
 
                 if (!monthlyData[monthKey].isLedgerRow) {
-                    let amount = Number(order.grandtotal) || 0;
-                    let estimatedFees = Number(order.estimated_fees) || 0;
-                    
                     monthlyData[monthKey].orders += 1;
                     monthlyData[monthKey].sales += amount;
                     monthlyData[monthKey].fees -= estimatedFees; 
@@ -1745,7 +1912,7 @@
                     buyerLedger[cleanBuyer] = { id: cleanBuyer, orderIds: new Set(), spend: 0 };
                 }
                 buyerLedger[cleanBuyer].orderIds.add(order.receipt_id);
-                buyerLedger[cleanBuyer].spend += Number(order.grandtotal) || 0;
+                buyerLedger[cleanBuyer].spend += amount;
 
                 let day = order.day_of_week !== undefined ? order.day_of_week : d.getDay();
                 let month = order.month_index !== undefined ? order.month_index : d.getMonth();
@@ -1755,7 +1922,6 @@
 
             // 3. Process Line Items (Linked to Filtered Orders)
             items.forEach(item => {
-                // Only include line items whose parent order falls within the active date range
                 if (item.receipt_id && !validFilteredReceipts.has(item.receipt_id)) {
                     return;
                 }
@@ -1763,10 +1929,14 @@
                 let shortName = String(item.item_title || 'Digital Printable').replace('—', '-').split(/[-|]/)[0].trim().substring(0, 50);
                 let qty = Number(item.quantity) || 1;
                 let itemTotal = Number(item.item_total) || 0;
+                let allocatedFee = estimateProductFee(itemTotal, qty, item.receipt_id, receiptMap);
 
-                if (!itemStats[shortName]) itemStats[shortName] = { title: shortName, qty: 0, revenue: 0 };
+                if (!itemStats[shortName]) {
+                    itemStats[shortName] = { title: shortName, qty: 0, revenue: 0, fees: 0, profit: 0, margin: 0 };
+                }
                 itemStats[shortName].qty += qty;
                 itemStats[shortName].revenue += itemTotal;
+                itemStats[shortName].fees += allocatedFee;
 
                 if (!orderBaskets[item.receipt_id]) orderBaskets[item.receipt_id] = [];
                 orderBaskets[item.receipt_id].push(shortName);
@@ -1781,10 +1951,15 @@
                 if (!m.isLedgerRow) {
                     m.profit = m.sales + m.fees + m.adFees + m.refunds;
                 }
+                m.margin = m.sales > 0 ? (m.profit / m.sales) * 100 : 0;
                 return m;
             }).sort((a, b) => a.month.localeCompare(b.month));
 
-            productData = Object.values(itemStats).sort((a, b) => b.revenue - a.revenue);
+            productData = Object.values(itemStats).map(item => {
+                item.profit = item.revenue - item.fees;
+                item.margin = item.revenue > 0 ? (item.profit / item.revenue) * 100 : 0;
+                return item;
+            }).sort((a, b) => b.revenue - a.revenue);
 
             let pairCounts = {};
             Object.values(orderBaskets).forEach(basketItems => {
@@ -1809,6 +1984,9 @@
             refreshAdvancedDashboard();
         }
 
+        // ==========================================
+        // 6. RENDER OVERVIEW & LEDGER TABS
+        // ==========================================
         function refreshFinancialDashboard() {
             let tOrders = 0, tSales = 0, tFees = 0, tAds = 0, tRefunds = 0, tProfit = 0;
             historicalData.forEach(d => {
@@ -1819,56 +1997,200 @@
             let margin = tSales > 0 ? (tProfit / tSales) * 100 : 0;
             let aov = tOrders > 0 ? (tSales / tOrders) : 0;
 
-            document.getElementById('kpi-orders').innerText = tOrders;
-            document.getElementById('kpi-sales').innerText = `₹${tSales.toFixed(2)}`;
-            document.getElementById('kpi-profit').innerText = `₹${tProfit.toFixed(2)}`;
-            document.getElementById('kpi-margin').innerText = `${margin.toFixed(2)}%`;
-            document.getElementById('kpi-aov').innerText = `₹${aov.toFixed(2)}`;
-            document.getElementById('kpi-fees').innerText = `₹${tFees.toFixed(2)}`;
-            document.getElementById('kpi-ads').innerText = `₹${tAds.toFixed(2)}`;
-            document.getElementById('kpi-refunds').innerText = `₹${tRefunds.toFixed(2)}`;
+            document.getElementById('kpi-orders').innerText = fmtInt(tOrders);
+            document.getElementById('kpi-sales').innerText = fmtCurr(tSales);
+            document.getElementById('kpi-profit').innerText = fmtCurr(tProfit);
+            document.getElementById('kpi-margin').innerText = `${fmtNum(margin)}%`;
+            document.getElementById('kpi-aov').innerText = fmtCurr(aov);
+            document.getElementById('kpi-fees').innerText = fmtCurr(tFees);
+            document.getElementById('kpi-ads').innerText = fmtCurr(tAds);
+            document.getElementById('kpi-refunds').innerText = fmtCurr(tRefunds);
 
             const labels = historicalData.map(d => d.month);
             
             if (chartFinancials) chartFinancials.destroy();
             chartFinancials = new Chart(document.getElementById('financialsChart').getContext('2d'), {
                 type: 'line',
-                data: { labels: labels, datasets: [
-                    { label: 'Sales (₹)', data: historicalData.map(d => d.sales), borderColor: '#0071E3', backgroundColor: 'rgba(0, 113, 227, 0.08)', borderWidth: 2.5, pointRadius: 3, tension: 0.35, fill: true },
-                    { label: 'Net Profit (₹)', data: historicalData.map(d => d.profit), borderColor: '#34C759', backgroundColor: 'rgba(52, 199, 89, 0.08)', borderWidth: 2.5, pointRadius: 3, tension: 0.35, fill: true },
-                    { label: 'Fees (₹)', data: historicalData.map(d => d.fees), borderColor: '#FF3B30', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, borderDash: [5, 5], tension: 0.35 }
-                ]}, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8 } } } }
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Sales (₹)',
+                            data: historicalData.map(d => d.sales),
+                            borderColor: '#0071E3',
+                            backgroundColor: 'rgba(0, 113, 227, 0.08)',
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            tension: 0.35,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Net Profit (₹)',
+                            data: historicalData.map(d => d.profit),
+                            borderColor: '#34C759',
+                            backgroundColor: 'rgba(52, 199, 89, 0.08)',
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            tension: 0.35,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Fees (₹)',
+                            data: historicalData.map(d => d.fees),
+                            borderColor: '#FF3B30',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            borderDash: [5, 5],
+                            tension: 0.35,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Profit Margin (%)',
+                            data: historicalData.map(d => d.sales > 0 ? Number(((d.profit / d.sales) * 100).toFixed(2)) : 0),
+                            borderColor: '#30B0C7',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            borderDash: [3, 3],
+                            tension: 0.35,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            ticks: { callback: (val) => '₹' + Number(val).toLocaleString('en-US') }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            ticks: { callback: (val) => val + '%' }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8 } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    if (ctx.dataset.yAxisID === 'y1') {
+                                        return `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)}%`;
+                                    }
+                                    return `${ctx.dataset.label}: ${fmtCurr(ctx.parsed.y)}`;
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
+            // Monthly Order Volume Bar Chart with Data Labels on Top
             if (chartOrders) chartOrders.destroy();
             chartOrders = new Chart(document.getElementById('ordersChart').getContext('2d'), {
                 type: 'bar',
-                data: { labels: labels, datasets: [{ label: 'Total Orders', data: historicalData.map(d => d.orders), backgroundColor: '#FF9500', borderRadius: 6 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                plugins: [ChartDataLabels],
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Total Orders',
+                        data: historicalData.map(d => d.orders),
+                        backgroundColor: '#FF9500',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: { top: 26 }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: (val) => fmtInt(val) }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'top',
+                            offset: 4,
+                            color: '#1D1D1F',
+                            font: {
+                                weight: '700',
+                                size: 12
+                            },
+                            formatter: function(value) {
+                                return fmtInt(value);
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `Orders: ${fmtInt(ctx.parsed.y)}`
+                            }
+                        }
+                    }
+                }
             });
 
+            // Month-Over-Month Ledger Table with Profit Margin Column
             const tbody = document.getElementById('history-body');
             tbody.innerHTML = ''; 
             if (historicalData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-secondary);">No financial records found for the selected date range.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-secondary);">No financial records found for the selected date range.</td></tr>`;
             } else {
                 [...historicalData].reverse().forEach(row => {
+                    let rowMarginDisplay = row.sales > 0 ? `${fmtNum(row.margin)}%` : '0.00%';
+                    let pillClass = row.profit >= 0 ? 'pill-green' : 'pill-red';
+
                     let tr = document.createElement('tr');
-                    tr.innerHTML = `<td style="font-weight: 600;">${row.month}</td><td>${row.orders}</td><td>₹${row.sales.toFixed(2)}</td><td class="${row.fees < 0 ? 'text-red' : ''}">${row.fees.toFixed(2)}</td><td class="${row.adFees < 0 ? 'text-red' : ''}">${row.adFees.toFixed(2)}</td><td class="${row.refunds < 0 ? 'text-red' : ''}">${row.refunds.toFixed(2)}</td><td class="${row.profit >= 0 ? 'text-green' : 'text-red'}">₹${row.profit.toFixed(2)}</td>`;
+                    tr.innerHTML = `
+                        <td style="font-weight: 600;">${row.month}</td>
+                        <td>${fmtInt(row.orders)}</td>
+                        <td>${fmtCurr(row.sales)}</td>
+                        <td class="${row.fees < 0 ? 'text-red' : ''}">${fmtCurr(row.fees)}</td>
+                        <td class="${row.adFees < 0 ? 'text-red' : ''}">${fmtCurr(row.adFees)}</td>
+                        <td class="${row.refunds < 0 ? 'text-red' : ''}">${fmtCurr(row.refunds)}</td>
+                        <td class="${row.profit >= 0 ? 'text-green' : 'text-red'}">${fmtCurr(row.profit)}</td>
+                        <td><span class="margin-pill ${pillClass}">${rowMarginDisplay}</span></td>
+                    `;
                     tbody.appendChild(tr);
                 });
             }
         }
 
+        // ==========================================
+        // 7. RENDER PRODUCTS TAB
+        // ==========================================
         function refreshProductDashboard() {
             const tbody = document.getElementById('product-body');
             tbody.innerHTML = '';
             if (productData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">No product sales found for the selected date range.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">No product sales found for the selected date range.</td></tr>`;
             } else {
                 productData.forEach((item, index) => {
+                    let pillClass = item.profit >= 0 ? 'pill-green' : 'pill-red';
                     let tr = document.createElement('tr');
-                    tr.innerHTML = `<td style="font-weight: 600; color: var(--text-secondary);">#${index + 1}</td><td style="font-weight: 500;">${item.title}</td><td>${item.qty} units</td><td class="text-green">₹${item.revenue.toFixed(2)}</td>`;
+                    tr.innerHTML = `
+                        <td style="font-weight: 600; color: var(--text-secondary);">#${fmtInt(index + 1)}</td>
+                        <td style="font-weight: 500;">${item.title}</td>
+                        <td>${fmtInt(item.qty)} units</td>
+                        <td>${fmtCurr(item.revenue)}</td>
+                        <td class="${item.profit >= 0 ? 'text-green' : 'text-red'}">${fmtCurr(item.profit)}</td>
+                        <td><span class="margin-pill ${pillClass}">${fmtNum(item.margin)}%</span></td>
+                    `;
                     tbody.appendChild(tr);
                 });
             }
@@ -1880,7 +2202,7 @@
             } else {
                 marketBasketPairs.forEach(pair => {
                     let li = document.createElement('li');
-                    li.innerHTML = `<strong>${pair.count} orders contained:</strong> ${pair.pair}`;
+                    li.innerHTML = `<strong>${fmtInt(pair.count)} orders contained:</strong> ${pair.pair}`;
                     basketList.appendChild(li);
                 });
             }
@@ -1894,12 +2216,189 @@
 
             chartProduct = new Chart(document.getElementById('productDoughnut').getContext('2d'), {
                 type: 'doughnut',
-                data: { labels: chartLabels, datasets: [{ data: chartData, backgroundColor: ['#AF52DE', '#0071E3', '#30B0C7', '#34C759', '#FF9500', '#E5E5EA'], borderWidth: 2, borderColor: '#FFFFFF' }] },
-                options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 12, font: { size: 11 } } } } }
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        data: chartData,
+                        backgroundColor: ['#AF52DE', '#0071E3', '#30B0C7', '#34C759', '#FF9500', '#E5E5EA'],
+                        borderWidth: 2,
+                        borderColor: '#FFFFFF'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '68%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.label}: ${fmtCurr(ctx.parsed)}`
+                            }
+                        }
+                    }
+                }
             });
         }
 
+        // ==========================================
+        // 8. RENDER ANALYTICS & INVESTOR DILIGENCE TAB
+        // ==========================================
+        function getQuarterInfo(monthStr) {
+            const [y, m] = monthStr.split('-').map(Number);
+            const qEndMonthIdx = Math.ceil(m / 3) * 3;
+            const qKey = `${y}-Q${Math.ceil(m / 3)}`;
+            const monthNames = { 3: 'Mar', 6: 'Jun', 9: 'Sep', 12: 'Dec' };
+            const label = `${monthNames[qEndMonthIdx]} ${y}`;
+            return { key: qKey, label: label };
+        }
+
         function refreshAdvancedDashboard() {
+            // A. Compute Investor KPIs
+            const allBuyers = Object.values(buyerLedger);
+            const totalUniqueBuyers = allBuyers.length;
+            const repeatBuyersCount = allBuyers.filter(b => b.orderIds.size > 1).length;
+            const repeatRate = totalUniqueBuyers > 0 ? (repeatBuyersCount / totalUniqueBuyers) * 100 : 0;
+            const totalBuyerSpend = allBuyers.reduce((sum, b) => sum + b.spend, 0);
+            const avgLtv = totalUniqueBuyers > 0 ? (totalBuyerSpend / totalUniqueBuyers) : 0;
+
+            // Annualized Run-Rate based on trailing 3 active months (or available filtered months)
+            const recentMonths = historicalData.slice(-3);
+            const recentSalesSum = recentMonths.reduce((s, m) => s + m.sales, 0);
+            const recentProfitSum = recentMonths.reduce((s, m) => s + m.profit, 0);
+            const divisor = recentMonths.length || 1;
+            const arrSales = (recentSalesSum / divisor) * 12;
+            const arrProfit = (recentProfitSum / divisor) * 12;
+
+            // Compound Monthly Growth Rate (CMGR) from first positive sales month to latest month
+            const activeSalesMonths = historicalData.filter(m => m.sales > 0);
+            let cmgr = 0;
+            if (activeSalesMonths.length >= 2) {
+                const firstM = activeSalesMonths[0].sales;
+                const lastM = activeSalesMonths[activeSalesMonths.length - 1].sales;
+                const periods = activeSalesMonths.length - 1;
+                if (firstM > 0 && lastM > 0) {
+                    cmgr = (Math.pow(lastM / firstM, 1 / periods) - 1) * 100;
+                }
+            }
+
+            document.getElementById('inv-repeat-rate').innerText = `${fmtNum(repeatRate)}%`;
+            document.getElementById('inv-repeat-sub').innerText = `${fmtInt(repeatBuyersCount)} of ${fmtInt(totalUniqueBuyers)} unique buyers`;
+            document.getElementById('inv-ltv').innerText = fmtCurr(avgLtv);
+            document.getElementById('inv-arr').innerText = fmtCurr(arrSales, 0);
+            document.getElementById('inv-arr-sub').innerText = `Net Profit Run-Rate: ${fmtCurr(arrProfit, 0)}/yr`;
+            document.getElementById('inv-cmgr').innerText = `${cmgr >= 0 ? '+' : ''}${fmtNum(cmgr)}%`;
+
+            // B. Build Quarterly Results Table (Screener.in Horizontal Financial Statement Format)
+            const qMap = {};
+            historicalData.forEach(m => {
+                const qInfo = getQuarterInfo(m.month);
+                if (!qMap[qInfo.key]) {
+                    qMap[qInfo.key] = {
+                        key: qInfo.key,
+                        label: qInfo.label,
+                        sales: 0,
+                        expenses: 0,
+                        profit: 0,
+                        orders: 0
+                    };
+                }
+                // Expenses represent absolute value of platform fees, ad spend, and refunds
+                const monthExpenses = Math.abs(m.fees) + Math.abs(m.adFees) + Math.abs(m.refunds);
+                qMap[qInfo.key].sales += m.sales;
+                qMap[qInfo.key].expenses += monthExpenses;
+                qMap[qInfo.key].profit += m.profit;
+                qMap[qInfo.key].orders += m.orders;
+            });
+
+            const quarters = Object.values(qMap).sort((a, b) => a.key.localeCompare(b.key));
+            const qHead = document.getElementById('quarterly-head');
+            const qBody = document.getElementById('quarterly-body');
+
+            if (quarters.length === 0) {
+                qHead.innerHTML = `<tr><th>Metric</th><th>No Data</th></tr>`;
+                qBody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: var(--text-secondary);">No quarterly data available for this range.</td></tr>`;
+            } else {
+                qHead.innerHTML = `<tr><th></th>${quarters.map(q => `<th>${q.label}</th>`).join('')}</tr>`;
+
+                const salesRow = `<tr><td>Sales <span class="plus-symbol">+</span></td>${quarters.map(q => `<td>${fmtCurr(q.sales, 0)}</td>`).join('')}</tr>`;
+                const expRow = `<tr><td>Expenses <span class="plus-symbol">+</span></td>${quarters.map(q => `<td>${fmtCurr(q.expenses, 0)}</td>`).join('')}</tr>`;
+                const opProfitRow = `<tr class="quarterly-row-highlight"><td>Operating Profit</td>${quarters.map(q => `<td class="${q.profit >= 0 ? 'text-green' : 'text-red'}">${fmtCurr(q.profit, 0)}</td>`).join('')}</tr>`;
+                const marginRow = `<tr><td>Profit Margin %</td>${quarters.map(q => {
+                    let qm = q.sales > 0 ? (q.profit / q.sales) * 100 : 0;
+                    return `<td>${fmtNum(qm, 0)}%</td>`;
+                }).join('')}</tr>`;
+                const netProfitRow = `<tr class="quarterly-row-highlight"><td>Net Profit <span class="plus-symbol">+</span></td>${quarters.map(q => `<td class="${q.profit >= 0 ? 'text-green' : 'text-red'}">${fmtCurr(q.profit, 0)}</td>`).join('')}</tr>`;
+                const ordersRow = `<tr><td>Total Orders</td>${quarters.map(q => `<td>${fmtInt(q.orders)}</td>`).join('')}</tr>`;
+                const aovRow = `<tr><td>Avg Order Value (₹)</td>${quarters.map(q => {
+                    let qaov = q.orders > 0 ? (q.sales / q.orders) : 0;
+                    return `<td>${fmtCurr(qaov, 0)}</td>`;
+                }).join('')}</tr>`;
+
+                qBody.innerHTML = salesRow + expRow + opProfitRow + marginRow + netProfitRow + ordersRow + aovRow;
+            }
+
+            // C. Cumulative Revenue & Profit Growth Chart
+            let runningSales = 0;
+            let runningProfit = 0;
+            const cumSales = [];
+            const cumProfit = [];
+            historicalData.forEach(d => {
+                runningSales += d.sales;
+                runningProfit += d.profit;
+                cumSales.push(runningSales);
+                cumProfit.push(runningProfit);
+            });
+
+            if (chartCumulative) chartCumulative.destroy();
+            chartCumulative = new Chart(document.getElementById('cumulativeChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: historicalData.map(d => d.month),
+                    datasets: [
+                        {
+                            label: 'Cumulative Gross Sales (₹)',
+                            data: cumSales,
+                            borderColor: '#5856D6',
+                            backgroundColor: 'rgba(88, 86, 214, 0.1)',
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            tension: 0.35,
+                            fill: true
+                        },
+                        {
+                            label: 'Cumulative Net Profit (₹)',
+                            data: cumProfit,
+                            borderColor: '#34C759',
+                            backgroundColor: 'rgba(52, 199, 89, 0.12)',
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            tension: 0.35,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: {
+                            ticks: { callback: (val) => '₹' + Number(val).toLocaleString('en-US') }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8 } },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.dataset.label}: ${fmtCurr(ctx.parsed.y)}`
+                            }
+                        }
+                    }
+                }
+            });
+
+            // D. Purchasing Heatmap
             const heatContainer = document.getElementById('heatmap-container');
             heatContainer.innerHTML = '';
             
@@ -1940,7 +2439,7 @@
 
                     cell.addEventListener('mouseover', (e) => {
                         const tooltip = document.getElementById('custom-tooltip');
-                        tooltip.innerHTML = `<strong style="color: #FF9500;">${day}s in ${months[m]}</strong><br>${val} Orders`;
+                        tooltip.innerHTML = `<strong style="color: #FF9500;">${day}s in ${months[m]}</strong><br>${fmtInt(val)} Orders`;
                         tooltip.style.opacity = 1;
                     });
                     cell.addEventListener('mousemove', (e) => {
@@ -1959,6 +2458,7 @@
                 heatContainer.appendChild(rowDiv);
             });
 
+            // E. Repeat Buyer Leaderboard
             let topBuyers = Object.values(buyerLedger)
                 .map(b => ({ id: b.id, orders: b.orderIds.size, spend: b.spend }))
                 .filter(b => b.orders > 1) 
@@ -1972,11 +2472,17 @@
             } else {
                 topBuyers.forEach((b, idx) => {
                     let tr = document.createElement('tr');
-                    tr.innerHTML = `<td style="font-weight: 600; color: var(--text-secondary);">#${idx + 1}</td><td style="font-weight:600;">${b.id.substring(0,25)}</td><td><span style="background:var(--apple-blue-light); color:var(--apple-blue); padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:600;">${b.orders} purchases</span></td><td class="text-green">₹${b.spend.toFixed(2)}</td>`;
+                    tr.innerHTML = `
+                        <td style="font-weight: 600; color: var(--text-secondary);">#${fmtInt(idx + 1)}</td>
+                        <td style="font-weight:600;">${b.id.substring(0,25)}</td>
+                        <td><span style="background:var(--apple-blue-light); color:var(--apple-blue); padding: 4px 10px; border-radius: 20px; font-size:12px; font-weight:600;">${fmtInt(b.orders)} purchases</span></td>
+                        <td class="text-green">${fmtCurr(b.spend)}</td>
+                    `;
                     lBody.appendChild(tr);
                 });
             }
 
+            // F. Revenue by Price Tier Doughnut
             if (chartTier) chartTier.destroy();
             chartTier = new Chart(document.getElementById('tierDoughnut').getContext('2d'), {
                 type: 'doughnut',
@@ -1989,10 +2495,25 @@
                         borderColor: '#FFFFFF'
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 14 } } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '68%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 14 } },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.label}: ${fmtCurr(ctx.parsed)}`
+                            }
+                        }
+                    }
+                }
             });
         }
 
+        // ==========================================
+        // 9. PRICING CALCULATOR & SIMULATOR
+        // ==========================================
         function calculatePricing() {
             let mrp = parseFloat(document.getElementById('mrp').value) || 0;
             let discount = parseFloat(document.getElementById('discount').value) || 0;
@@ -2015,15 +2536,20 @@
             let variablePercentage = (transPercent / 100) + (procPercent / 100) + (regPercent / 100);
             let breakeven = variablePercentage < 1 ? (listingFee + fixedProc + cost) / (1 - variablePercentage) : 0;
 
-            document.getElementById('out-breakeven').innerText = `₹${breakeven.toFixed(2)}`;
-            document.getElementById('out-sp').innerText = `₹${sellingPrice.toFixed(2)}`;
-            document.getElementById('out-listing-val').innerText = `₹${listingFee.toFixed(2)}`;
-            document.getElementById('out-trans').innerText = `₹${transactionFee.toFixed(2)}`;
-            document.getElementById('out-proc').innerText = `₹${processingFee.toFixed(2)}`;
-            document.getElementById('out-reg').innerText = `₹${regFee.toFixed(2)}`;
-            document.getElementById('out-fees').innerText = `₹${totalFees.toFixed(2)}`;
-            document.getElementById('out-profit').innerText = `₹${profit.toFixed(2)}`;
-            document.getElementById('out-margin').innerText = `${margin.toFixed(2)}%`;
+            document.getElementById('out-breakeven').innerText = fmtCurr(breakeven);
+            document.getElementById('out-sp').innerText = fmtCurr(sellingPrice);
+            document.getElementById('out-listing-val').innerText = fmtCurr(listingFee);
+            document.getElementById('out-trans').innerText = fmtCurr(transactionFee);
+            document.getElementById('out-proc').innerText = fmtCurr(processingFee);
+            document.getElementById('out-reg').innerText = fmtCurr(regFee);
+            document.getElementById('out-fees').innerText = fmtCurr(totalFees);
+            document.getElementById('out-profit').innerText = fmtCurr(profit);
+            document.getElementById('out-margin').innerText = `${fmtNum(margin)}%`;
+
+            // Dynamically refresh Product Matrix if fee assumptions are adjusted
+            if (rawLedger.length > 0 || rawOrders.length > 0) {
+                processDatabaseRecords(rawLedger, rawOrders, rawItems);
+            }
         }
 
         function populateSimulator() {
@@ -2033,12 +2559,20 @@
                 { sp: 200, fees: 66.58, profit: 133.42, margin: '66.71%', verdict: '✅ Strong Profit' },
                 { sp: 300, fees: 78.37, profit: 221.63, margin: '73.88%', verdict: '✅ Strong Profit' },
                 { sp: 400, fees: 90.16, profit: 309.84, margin: '77.46%', verdict: '✅ Strong Profit' },
-                { sp: 500, fees: 101.95, profit: 398.05, margin: '79.61%', verdict: '✅ Strong Profit' }
+                { sp: 500, fees: 101.95, profit: 398.05, margin: '79.61%', verdict: '✅ Strong Profit' },
+                { sp: 1000, fees: 160.90, profit: 839.10, margin: '83.91%', verdict: '✅ Strong Profit' }
             ];
             const tbody = document.getElementById('simulator-body');
+            tbody.innerHTML = '';
             simData.forEach(row => {
                 let tr = document.createElement('tr');
-                tr.innerHTML = `<td style="font-weight: 600;">₹${row.sp}</td><td>₹${row.fees.toFixed(2)}</td><td class="text-green">₹${row.profit.toFixed(2)}</td><td style="font-weight: 600;">${row.margin}</td><td>${row.verdict}</td>`;
+                tr.innerHTML = `
+                    <td style="font-weight: 600;">${fmtCurr(row.sp, 0)}</td>
+                    <td>${fmtCurr(row.fees)}</td>
+                    <td class="text-green">${fmtCurr(row.profit)}</td>
+                    <td style="font-weight: 600;">${row.margin}</td>
+                    <td>${row.verdict}</td>
+                `;
                 tbody.appendChild(tr);
             });
         }
